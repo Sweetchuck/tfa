@@ -56,22 +56,40 @@ function tfa_code($form_state, $uid, $hash = NULL) {
     drupal_access_denied();
     exit();
   }
-  
-  $form['uid'] = array(
-    '#type' => 'value',
-    '#value' => $uid,
-  );
-  $form['code'] = array(
-    '#type' => 'textfield',
-    '#title' => t('Code'),
-    '#required' => TRUE,
-  );
-  $form['login'] = array(
-    '#type' => 'submit',
-    '#value' => t('Log in'),
-  );
+
+  if (tfa_send_code($account)) {
+    // @todo success message
+    $form['uid'] = array(
+      '#type' => 'value',
+      '#value' => $uid,
+    );
+    $form['code'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Code'),
+      '#required' => TRUE,
+    );
+    $form['login'] = array(
+      '#type' => 'submit',
+      '#value' => t('Log in'),
+    );
+  }
+  else {
+    // @todo error message
+    drupal_goto('user');
+  }
 
   return $form;
+}
+
+function tfa_send_code($account) {
+  if (variable_get('tfa_test_mode', TRUE)) {
+    $message = variable_get('twilio_pin', '') . ' ' . TFA_TEST_SECRET;
+  }
+  else {
+    // @todo generate code
+    $message = '';
+  }
+  $sms_send = sms_send($account->profile_phone, $message);
 }
 
 /**
