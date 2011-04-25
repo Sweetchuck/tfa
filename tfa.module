@@ -2,25 +2,34 @@
 
 define('TFA_TEST_SECRET', 'secret');
 
+/**
+ * Implements hook_menu().
+ */
 function tfa_menu() {
   $items['tfa/%/%'] = array(
     'title' => 'Final authentication',
     'page callback' => 'drupal_get_form',
-    'page arguments' => array('tfa_code', 1, 2),
+    'page arguments' => array('tfa_code_form', 1, 2),
     'access callback' => TRUE,
     'type' => MENU_CALLBACK,
   );
   return $items;
 }
 
+/**
+ * Implements hook_perm().
+ */
 function tfa_perm() {
   return array('skip tfa');
 }
 
+/**
+ * Implements hook_user().
+ */
 function tfa_user($op, &$edit, &$account, $category = FALSE) {
   global $user;
   if ($op == 'login') {
-    // First login operation, send to tfa form.
+    // First login operation, send to TFA form.
     // @todo is session best for storing whether tfa was valid?
     // @todo user roles permission based tfa?
     if (!$_SESSION['tfa_code'] && !user_access('skip tfa', $account)) {
@@ -34,7 +43,7 @@ function tfa_user($op, &$edit, &$account, $category = FALSE) {
       unset($_REQUEST['destination']);
   
       $signatory = db_fetch_object(db_query_range('SELECT * FROM {users} WHERE uid = %d', $uid, 0, 1));
-      $login_hash = _tfa_login_hash($signatory);
+      $login_hash = tfa_login_hash($signatory);
       drupal_goto('tfa/' . $signatory->uid . '/' . $login_hash);
       // @todo could also form alter login forms to go multi-step?
     }
@@ -42,20 +51,49 @@ function tfa_user($op, &$edit, &$account, $category = FALSE) {
 }
 
 /**
- *
+ * Generate a hash for this account for the TFA login form.
  */
-function _tfa_login_hash($account) {
+function tfa_login_hash($account) {
   // @todo consider timeouts and better hashing
   return md5($account->name . $account->pass . $account->login);
 }
 
 /**
- *
+ * Send the code to the user.
  */
-function tfa_code($form_state, $uid, $hash = NULL) {
+function tfa_send_code($account) {
+  if (variable_get('tfa_test_mode', TRUE)) {
+    $message = variable_get('twilio_pin', '') . ' ' . TFA_TEST_SECRET;
+  }
+  else {
+    // @todo generate code and store
+    $message = '';
+  }
+  // @todo configurable phone/email
+  return sms_send($account->profile_phone, $message);
+}
+
+/**
+ * Retreive sent code for user.
+ */
+function tfa_get_code($uid) {
+  if (variable_get('tfa_test_mode', TRUE)) {
+    $code = TFA_TEST_SECRET;
+  }
+  else {
+    // @todo retrieve code
+    $code = '';
+  }
+  return $code;
+}
+
+/**
+ * Form for code entry.
+ */
+function tfa_code_form($form_state, $uid, $hash = NULL) {
   // Confirm hash is valid. @todo could account for timeouts.
   $account = user_load(array('uid' => $uid));
-  $valid_hash = _tfa_login_hash($account);
+  $valid_hash = tfa_login_hash($account);
   if ($hash != $valid_hash) {
     drupal_access_denied();
     exit();
@@ -79,36 +117,28 @@ function tfa_code($form_state, $uid, $hash = NULL) {
   }
   else {
     // @todo error message
+    drupal_set_message(t('There was an error sending the code.'));
     drupal_goto('user');
   }
 
   return $form;
 }
 
-function tfa_send_code($account) {
-  if (variable_get('tfa_test_mode', TRUE)) {
-    $message = variable_get('twilio_pin', '') . ' ' . TFA_TEST_SECRET;
-  }
-  else {
-    // @todo generate code
-    $message = '';
-  }
-  $sms_send = sms_send($account->profile_phone, $message);
-}
-
 /**
- *
+ * Validate handler for TFA login form.
  */
 function tfa_code_validate($form, &$form_state) {
-  // 
-  if ($form_state['values']['code'] != TFA_TEST_SECRET) {
+  // Validate code.
+  // @todo is it possible to alter the UID client-site and flood out another user?
+  $code = tfa_get_code($form_state['values']['uid']);
+  if ($code != TFA_TEST_SECRET) {
     form_set_error('code', t('Invalid code.'));
-    // @todo flood
+    // @todo flood control
   }
 }
 
 /**
- *
+ * Submit handler for TFA login form.
  */
 function tfa_code_submit($form, &$form_state) {
   global $user;
