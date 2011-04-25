@@ -13,13 +13,17 @@ function tfa_menu() {
   return $items;
 }
 
+function tfa_perm() {
+  return array('skip tfa');
+}
+
 function tfa_user($op, &$edit, &$account, $category = FALSE) {
   global $user;
   if ($op == 'login') {
     // First login operation, send to tfa form.
     // @todo is session best for storing whether tfa was valid?
     // @todo user roles permission based tfa?
-    if (!$_SESSION['tfa_code']) {
+    if (!$_SESSION['tfa_code'] && !user_access('skip tfa', $account)) {
       $uid = $user->uid;
       // Destroy the current session.
       session_destroy();
