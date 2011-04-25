@@ -1,4 +1,0 @@
-;
-name = PIN Auth
-description = Mobile SMS 2nd factor authentication
-core = 6.x
