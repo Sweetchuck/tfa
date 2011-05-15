@@ -12,7 +12,7 @@ define('TFA_SEND_FLOOD_HIT', -1);
  */
 function tfa_menu() {
   $items['tfa/%/%'] = array(
-    'title' => 'Final authentication',
+    'title' => 'Complete authentication',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('tfa_code_form', 1, 2),
     'access callback' => 'user_is_anonymous',
@@ -230,6 +230,9 @@ function tfa_code_form($form_state, $uid, $hash = NULL) {
     drupal_goto('user');
   }
 
+  $form['desc'] = array(
+    '#markup' => t('A one-time code has been sent to you. Enter it here to finalize authentication.'),
+  );
   $form['uid'] = array(
     '#type' => 'value',
     '#value' => $uid,
