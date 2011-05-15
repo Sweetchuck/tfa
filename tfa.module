@@ -59,7 +59,7 @@ function tfa_user_login(&$edit, $account) {
       unset($_GET['destination']);
 
       // @todo can $account be used instead of reloading?
-      $signatory = db_query('SELECT * FROM {users} WHERE uid = :uid', array(':uid' => $uid))->fetch();
+      $signatory = user_load($uid);
       // Generate and store code.
       $code = tfa_generate_code($signatory);
       tfa_store_code($signatory->uid, $code);
