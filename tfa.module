@@ -52,7 +52,7 @@ function tfa_user($op, &$edit, &$account, $category = FALSE) {
       unset($_REQUEST['destination']);
 
       // @todo can $account be used instead of reloading?
-      $signatory = db_fetch_object(db_query_range('SELECT * FROM {users} WHERE uid = %d', $uid, 0, 1));
+      $signatory = user_load(array('uid' => $uid));
       // Generate and store code.
       $code = tfa_generate_code($signatory);
       tfa_store_code($signatory->uid, $code);
@@ -231,7 +231,7 @@ function tfa_code_form($form_state, $uid, $hash = NULL) {
   }
 
   $form['desc'] = array(
-    '#markup' => t('A one-time code has been sent to you. Enter it here to finalize authentication.'),
+    '#value' => t('A one-time code has been sent to you. Enter it here to finalize authentication.'),
   );
   $form['uid'] = array(
     '#type' => 'value',
