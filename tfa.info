@@ -1,3 +1,6 @@
 name = TFA
 description = Two-factor Authentication
-core = 6.x
+core = 7.x
+
+files[] = tfa.install
+files[] = tfa.module

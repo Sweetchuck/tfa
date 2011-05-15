@@ -5,14 +5,7 @@
  */
 
 /**
- * Implementation of hook_install().
- */
-function tfa_install() {
-  drupal_install_schema('tfa');
-}
-
-/**
- * Implementation of hook_schema().
+ * Implements hook_schema().
  */
 function tfa_schema() {
   $schema['tfa'] = array(
@@ -47,13 +40,13 @@ function tfa_schema() {
       'code' => array('code'),
     ),
   );
-  
+
   return $schema;
 }
 
 /**
- * Implementation of hook_uninstall().
+ * Implements hook_uninstall().
  */
 function tfa_uninstall() {
-  drupal_uninstall_schema('tfa');
+  // @todo delete variables.
 }

@@ -12,7 +12,7 @@ define('TFA_SEND_FLOOD_HIT', -1);
  */
 function tfa_menu() {
   $items['tfa/%/%'] = array(
-    'title' => 'Final authentication',
+    'title' => 'Complete authentication',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('tfa_code_form', 1, 2),
     'access callback' => 'user_is_anonymous',
@@ -22,18 +22,23 @@ function tfa_menu() {
 }
 
 /**
- * Implements hook_perm().
+ * Implements hook_permission().
  */
-function tfa_perm() {
-  return array('skip tfa');
+function tfa_permission() {
+  return array(
+    'skip tfa' => array(
+      'title' => t('Skip TFA process'),
+      'description' => t('Skip the Two-factor authentication process and authenticate as normal.'),
+    ),
+  );
 }
 
 /**
- * Implements hook_user().
+ * Implements hook_user_login().
  */
-function tfa_user($op, &$edit, &$account, $category = FALSE) {
+function tfa_user_login(&$edit, $account) {
   global $user;
-  if ($op == 'login' && tfa_send_method_available() && !user_access('skip tfa', $account)) {
+  if (tfa_send_method_available() && !user_access('skip tfa', $account)) {
     // If a code is set and not marked accepted provide TFA code process.
     $code = tfa_get_code($account->uid);
     if (!empty($code) && $code['accepted']) {
@@ -45,19 +50,21 @@ function tfa_user($op, &$edit, &$account, $category = FALSE) {
       $uid = $user->uid;
 
       // Destroy the current session to halt standard authentication process.
+      module_invoke_all('user_logout', $user);
+
+      // Destroy the current session, and reset $user to the anonymous user.
       session_destroy();
-      module_invoke_all('user', 'logout', NULL, $user);
       // Force anonymous user.
-      $user = user_load(array('uid' => 0));
-      unset($_REQUEST['destination']);
+      $user = user_load(0);
+      unset($_GET['destination']);
 
       // @todo can $account be used instead of reloading?
-      $signatory = db_fetch_object(db_query_range('SELECT * FROM {users} WHERE uid = %d', $uid, 0, 1));
+      $signatory = db_query('SELECT * FROM {users} WHERE uid = :uid', array(':uid' => $uid))->fetch();
       // Generate and store code.
       $code = tfa_generate_code($signatory);
       tfa_store_code($signatory->uid, $code);
       // Start send and redirection process.
-      tfa_process($signatory);
+      tfa_tfa_process($signatory);
     }
   }
 }
@@ -65,7 +72,7 @@ function tfa_user($op, &$edit, &$account, $category = FALSE) {
 /**
  * Send the code and redirect to entry form.
  */
-function tfa_process($account) {
+function tfa_tfa_process($account) {
   // Send the code and if succesfull send to entry form.
   $send_result = tfa_send_code($account);
   if ($send_result !== TFA_SEND_FLOOD_HIT && $send_result !== FALSE) {
@@ -137,8 +144,8 @@ function tfa_send_code($account) {
 }
 
 function _tfa_send_code($account, $code, $message = '') {
-  $phone_field = variable_get('tfa_phone_field', 'profile_phone');
-  $phone_number = $account->{$phone_field};
+  $phone_field = variable_get('tfa_phone_field', 'field_phone_number');
+  $phone_number = $account->{$phone_field}[LANGUAGE_NONE][0]['value']; // @todo handle this better
   if (variable_get('tfa_test_mode', TRUE)) {
     $message = variable_get('twilio_pin', '') . ' ' . $code;
   }
@@ -161,7 +168,7 @@ function tfa_store_code($uid, $code) {
     'uid' => $uid,
     'code' => $code,
     'accepted' => 0,
-    'created' => time(),
+    'created' => REQUEST_TIME,
   );
   // @todo Allow code updates?
   if (!$previous_code) {
@@ -179,7 +186,7 @@ function tfa_store_code($uid, $code) {
  * @return array Array of with keys 'code' string and 'accepted' bool.
  */
 function tfa_get_code($uid) {
-  $result = db_fetch_array(db_query("SELECT code, accepted FROM {tfa} WHERE uid = %d", $uid));
+  $result = db_query("SELECT code, accepted FROM {tfa} WHERE uid = :uid", array(':uid' => $uid))->fetchAssoc();
   if (!empty($result)) {
     return $result;
   }
@@ -192,7 +199,12 @@ function tfa_get_code($uid) {
  * @param int $uid UID of account.
  */
 function tfa_accept_code($uid) {
-  db_query("UPDATE {tfa} SET accepted = 1 WHERE uid = %d", $uid);
+  db_update('tfa')
+  ->fields(array(
+    'accepted' => 1,
+  ))
+  ->condition('uid', $uid)
+  ->execute();
 }
 
 /**
@@ -201,15 +213,17 @@ function tfa_accept_code($uid) {
  * @param int $uid UID of account.
  */
 function tfa_delete_code($uid) {
-  db_query("DELETE FROM {tfa} WHERE uid = %d", $uid);
+  db_delete('tfa')
+  ->condition('uid', $uid)
+  ->execute();
 }
 
 /**
  * Form for code entry.
  */
-function tfa_code_form($form_state, $uid, $hash = NULL) {
+function tfa_code_form($form, $form_state, $uid, $hash = NULL) {
   // Confirm hash is valid. @todo could account for timeouts.
-  $account = user_load(array('uid' => $uid));
+  $account = user_load($uid);
   $valid_hash = tfa_login_hash($account);
   if ($hash != $valid_hash) {
     drupal_access_denied();
@@ -223,13 +237,16 @@ function tfa_code_form($form_state, $uid, $hash = NULL) {
   }
 
   // Hack to get around Drupal's forced validation on required elements.
-  if ($_POST['op'] == t('Resend code')) {
+  if (isset($_POST['op']) && $_POST['op'] == t('Resend code')) {
     // @todo generate a new code?
-    tfa_process($account);
-    // tfa_process() doesn't redirect user so do so here.
+    tfa_tfa_process($account);
+    // tfa_tfa_process() doesn't redirect user so do so here.
     drupal_goto('user');
   }
 
+  $form['desc'] = array(
+    '#markup' => t('A one-time code has been sent to you. Enter it here to finalize authentication.'),
+  );
   $form['uid'] = array(
     '#type' => 'value',
     '#value' => $uid,
@@ -253,7 +270,7 @@ function tfa_code_form($form_state, $uid, $hash = NULL) {
     '#value' => t('Resend code'),
     '#executes_submit_callback' => FALSE,
   );
-  
+
   $form['login'] = array(
     '#type' => 'submit',
     '#value' => t('Log in'),
@@ -283,16 +300,19 @@ function tfa_code_form_submit($form, &$form_state) {
   global $user;
 
   $uid = $form_state['values']['uid'];
-  $account = user_load(array('uid' => $uid));
+  $account = user_load($uid);
   $edit = array();
 
   $user = $account;
   // Update the user table timestamp noting user has logged in.
-  $user->login = time();
-  db_query("UPDATE {users} SET login = %d WHERE uid = %d", $user->login, $user->uid);
+  $user->login = REQUEST_TIME;
+  db_update('users')
+    ->fields(array('login' => $user->login))
+    ->condition('uid', $user->uid)
+    ->execute();
 
   // Regenerate the session ID to prevent against session fixation attacks.
-  sess_regenerate();
+  drupal_session_regenerate();
   // Mark code as accepted to avoid repeating TFA process.
   tfa_accept_code($account->uid);
   user_module_invoke('login', $edit, $user);
@@ -311,8 +331,8 @@ function tfa_requirements($phase) {
       $message = t('Channel not available');
     }
     $requirements['tfa'] = array(
-      'title' => t('Two-factor authentication'), 
-      'value' => $message, 
+      'title' => t('Two-factor authentication'),
+      'value' => $message,
       'severity' => $severity,
     );
     return $requirements;
