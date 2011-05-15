@@ -28,30 +28,41 @@ function tfa_perm() {
  */
 function tfa_user($op, &$edit, &$account, $category = FALSE) {
   global $user;
-  if ($op == 'login') {
-    // First login operation, send to TFA form.
-    // @todo is session best for storing whether tfa was valid?
-    // @todo user roles permission based tfa?
-    if (!$_SESSION['tfa_code'] && !user_access('skip tfa', $account)) {
+  if ($op == 'login' && !user_access('skip tfa', $account)) {
+    // If a code is set and not mark accepted provide TFA code process.
+    $code = tfa_get_code($account->uid);
+    if (!empty($code) && $code['accepted']) {
+      // Code has been validated, delete and let login continue.
+      tfa_delete_code($account->uid);
+    }
+    else {
+      // Hold onto UID because $user will be replaced with Anonymous.
       $uid = $user->uid;
-      // Destroy the current session.
+
+      // Destroy the current session to halt standard authentication process.
       session_destroy();
       module_invoke_all('user', 'logout', NULL, $user);
-  
       // Force anonymous user.
       $user = user_load(array('uid' => 0));
       unset($_REQUEST['destination']);
-  
+
+      // @todo can $account be used instead of reloading?
       $signatory = db_fetch_object(db_query_range('SELECT * FROM {users} WHERE uid = %d', $uid, 0, 1));
+      // Generate and store code.
+      $code = tfa_generate_code($signatory);
+      tfa_store_code($signatory->uid, $code);
+      // Generate hash for code entry form.
       $login_hash = tfa_login_hash($signatory);
       drupal_goto('tfa/' . $signatory->uid . '/' . $login_hash);
-      // @todo could also form alter login forms to go multi-step?
     }
   }
 }
 
 /**
  * Generate a hash for this account for the TFA login form.
+ *
+ * @param object $account User account.
+ * @return string Random hash.
  */
 function tfa_login_hash($account) {
   // @todo consider timeouts and better hashing
@@ -59,32 +70,99 @@ function tfa_login_hash($account) {
 }
 
 /**
- * Send the code to the user.
+ * Generate the code for TFA.
+ *
+ * @param object $account User account.
+ * @return string Random code or "nonce".
  */
-function tfa_send_code($account) {
-  if (variable_get('tfa_test_mode', TRUE)) {
-    $message = variable_get('twilio_pin', '') . ' ' . TFA_TEST_SECRET;
-  }
-  else {
-    // @todo generate code and store
-    $message = '';
-  }
-  // @todo configurable phone/email
-  return sms_send($account->profile_phone, $message);
-}
-
-/**
- * Retreive sent code for user.
- */
-function tfa_get_code($uid) {
+function tfa_generate_code($account) {
   if (variable_get('tfa_test_mode', TRUE)) {
     $code = TFA_TEST_SECRET;
   }
   else {
-    // @todo retrieve code
     $code = '';
   }
   return $code;
+}
+
+/**
+ * Send the code to the user.
+ *
+ * @param object $account User account.
+ * @return bool True or False if the code was sent on the secondary channel.
+ */
+function tfa_send_code($account) {
+  $code = tfa_get_code($account->uid);
+  $message = variable_get('tfa_send_message', t('Login code'));
+  // Variable send method, defaults to SMS Framework.
+  $tfa_send = variable_get('tfa_send_method', '_tfa_send_code');
+  if (function_exists($tfa_send)) {
+    return $tfa_send($account, $code, $message);
+  }
+  return FALSE;
+}
+
+function _tfa_send_code($account, $code, $message = '') {
+  if (variable_get('tfa_test_mode', TRUE)) {
+    $message = variable_get('twilio_pin', '') . ' ' . $code;
+  }
+  else {
+    $message = '';
+  }
+  return 1;//sms_send($account->profile_phone, $message);
+}
+
+/**
+ * Store the code for state control
+ *
+ * @param int $uid UID of account.
+ * @param string $code Code to store.
+ * @return SAVED_NEW, SAVED_UPDATED or False.
+ */
+function tfa_store_code($uid, $code) {
+  $previous_code = tfa_get_code($uid);
+  $record = array(
+    'uid' => $uid,
+    'code' => $code,
+    'accepted' => 0,
+    'created' => time(),
+  );
+  // @todo Allow code updates?
+  if (!$previous_code) {
+    return drupal_write_record('tfa', $record);
+  }
+  else {
+    return drupal_write_record('tfa', $record, array('uid'));
+  }
+}
+
+/**
+ * Retreive sent code for user or FALSE if no code was set.
+ *
+ * @param int $uid UID of account.
+ * @return array Array of with keys 'code' string and 'accepted' bool.
+ */
+function tfa_get_code($uid) {
+  $result = db_fetch_array(db_query("SELECT code, accepted FROM {tfa} WHERE uid = %d", $uid));
+  return !empty($result) ? $result : FALSE;
+}
+
+/**
+ * Mark a code as accepted.
+ *
+ * @param int $uid UID of account.
+ */
+function tfa_accept_code($uid) {
+  db_query("UPDATE {tfa} SET accepted = 1 WHERE uid = %d", $uid);
+}
+
+/**
+ * Delete a code for a user.
+ *
+ * @param int $uid UID of account.
+ */
+function tfa_delete_code($uid) {
+  db_query("DELETE FROM {tfa} WHERE uid = %d", $uid);
 }
 
 /**
@@ -127,11 +205,11 @@ function tfa_code_form($form_state, $uid, $hash = NULL) {
 /**
  * Validate handler for TFA login form.
  */
-function tfa_code_validate($form, &$form_state) {
+function tfa_code_form_validate($form, &$form_state) {
   // Validate code.
   // @todo is it possible to alter the UID client-site and flood out another user?
   $code = tfa_get_code($form_state['values']['uid']);
-  if ($code != TFA_TEST_SECRET) {
+  if ($code['code'] != $form_state['values']['code']) {
     form_set_error('code', t('Invalid code.'));
     // @todo flood control
   }
@@ -140,13 +218,13 @@ function tfa_code_validate($form, &$form_state) {
 /**
  * Submit handler for TFA login form.
  */
-function tfa_code_submit($form, &$form_state) {
+function tfa_code_form_submit($form, &$form_state) {
   global $user;
 
   $uid = $form_state['values']['uid'];
   $account = user_load(array('uid' => $uid));
   $edit = array();
-  
+
   $user = $account;
   // Update the user table timestamp noting user has logged in.
   $user->login = time();
@@ -154,7 +232,8 @@ function tfa_code_submit($form, &$form_state) {
 
   // Regenerate the session ID to prevent against session fixation attacks.
   sess_regenerate();
-  $_SESSION['tfa_code'] = TRUE; // @todo is session best for storing validation?
+  // Mark code as accepted to repeat TFA process.
+  tfa_accept_code($account->uid);
   user_module_invoke('login', $edit, $user);
   $form_state['redirect'] = 'user/' . $user->uid; // @todo destination
 }

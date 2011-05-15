@@ -1,0 +1,59 @@
+<?php
+
+/**
+ * @file
+ */
+
+/**
+ * Implementation of hook_install().
+ */
+function tfa_install() {
+  drupal_install_schema('tfa');
+}
+
+/**
+ * Implementation of hook_schema().
+ */
+function tfa_schema() {
+  $schema['tfa'] = array(
+    'fields' => array(
+      'uid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Primary Key: {users}.uid for user.',
+      ),
+      'code' => array(
+        'type' => 'varchar',
+        'length' => 160,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'accepted' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'size' => 'tiny',
+      ),
+      'created' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    'primary key' => array('uid'),
+    'indexes' => array(
+      'code' => array('code'),
+    ),
+  );
+  
+  return $schema;
+}
+
+/**
+ * Implementation of hook_uninstall().
+ */
+function tfa_uninstall() {
+  drupal_uninstall_schema('tfa');
+}
