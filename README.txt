@@ -1,2 +1,2 @@
-Two-factor authentication for Drupal
+Two-factor Authentication for Drupal
 
