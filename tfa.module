@@ -29,7 +29,7 @@ function tfa_menu() {
 }
 
 /**
- * Validate if access to TFA code entry form.
+ * Validate access to TFA code entry form.
  */
 function tfa_entry_access($uid, $check_hash) {
   // User must be anonymous for the code entry page.
@@ -114,8 +114,11 @@ function tfa_ready($account) {
   $channel = $function();
   // Verify there is an address (phone or other method) for this account.
   $function = $channel['address callback'];
-  $phone = $function($account);
-  if (empty($phone)) {
+  if (!function_exists($function)) {
+    return FALSE;
+  }
+  $address = $function($account);
+  if (empty($address)) {
     return FALSE;
   }
   return TRUE;
@@ -129,7 +132,7 @@ function tfa_help($path, $arg) {
     case 'admin/help#tfa':
       $output = '';
       $output .= '<h3>' . t('Two-factor Authentication') . '</h3>';
-      $output .= '<p>' . t("A helpful entry about your module") . '<p>';
+      $output .= '<p>' . t("TFA requires a communication channel to transfer the login code and an address to send to. By default, TFA will use the SMS Framework if installed. Add a user field to store phone numbers to enable TFA.") . '<p>';
       return $output;
   }
 }
@@ -157,6 +160,9 @@ function tfa_tfa_process($account) {
 
     // Hold onto destination and unset GET parameter.
     $query = drupal_get_query_parameters();
+    if (arg(0) == 'user' && arg(1) == 'reset') {
+      $query = array('destination' => 'user/' . $account->uid . '/edit');
+    }
     unset($_GET['destination']);
     drupal_goto('system/tfa/' . $account->uid . '/' . $login_hash, array('query' => $query));
   }

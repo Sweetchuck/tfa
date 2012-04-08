@@ -17,7 +17,7 @@ function tfa_code_form($form, $form_state, $uid, $hash = NULL) {
   $account = user_load($uid);
 
   $form['desc'] = array(
-    '#markup' => t('Enter your received login code to log in.'),
+    '#markup' => t('Enter your received login code to continue.'),
   );
   $form['uid'] = array(
     '#type' => 'value',
@@ -148,6 +148,7 @@ function tfa_admin_settings() {
       $options[$name] = $field['label'];
     }
     // Change to select field.
+    unset($form['tfa_phone_field']['#children']);
     $form['tfa_phone_field']['#type'] = 'select';
     $form['tfa_phone_field']['#default_value'] = variable_get('tfa_phone_field', '');
     $form['tfa_phone_field']['#options'] = $options;
