@@ -1,0 +1,101 @@
+<?php
+
+/**
+* Tests the functionality of the TFA module.
+*/
+class TFATestCase extends DrupalWebTestCase {
+
+  public static function getInfo() {
+    // Note: getInfo() strings are not translated with t().
+    return array(
+      'name' => 'Two-factor Authentication',
+      'description' => 'Test the Two-factor authentication process.',
+      'group' => 'TFA',
+    );
+  }
+
+  public function setUp() {
+    // Enable TFA module and the test channel module.
+    parent::setUp('tfa', 'tfa_test');
+    // Use the TFA test channel.
+    variable_set('tfa_channel', 'tfa_test');
+  }
+
+  /**
+   * Helper function for storing UI strings.
+   */
+  private function interfaceStrings($id) {
+    switch ($id) {
+      case 'sent':
+        return 'A message containing the code has been sent.';
+      case 'invalid-code':
+        return 'Invalid code';
+      case 'flood-send':
+        return 'You have reached the hourly threshold for login attempts. Please try again later.';
+      case 'flood-validate':
+        return 'You have reached the threshold for incorrect code entry attempts. Please try again later.';
+      
+    }
+  }
+
+  public function testFloodControl() {
+    // Set the TFA hourly flood threshold.
+    $hourly_threshold = 3;
+    variable_set('tfa_hourly_threshold', $hourly_threshold);
+    $account = $this->drupalCreateUser(array());
+
+    $edit = array(
+      'name' => $account->name,
+      'pass' => $account->pass_raw,
+    );
+    $this->drupalPost('user', $edit, t('Log in'));
+    // Check that TFA process has begun.
+    $this->assertText($this->interfaceStrings('sent'), 'The "TFA sent message" text appears');
+
+    // Check TFA validation flood.
+    $url_parts = explode('/', $this->url);
+    $login_hash = array_pop($url_parts);
+    $edit = array(
+      'code' => $this->randomName(),
+    );
+    $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, t('Log in'));
+    $this->assertText($this->interfaceStrings('invalid-code'), 'The "invalid code" text appears');
+    // Hit flood limit.
+    for ($i = 1; $i < $hourly_threshold; $i++) {
+      $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, t('Log in'));
+    }
+    $this->drupalGet('system/tfa/' . $account->uid . '/' . $login_hash); // Unsure why this is necessary.
+    $this->assertText($this->interfaceStrings('flood-validate'), 'The "TFA validate flood" text appears');
+
+    // Check TFA send flood.
+    $edit = array(
+      'name' => $account->name,
+      'pass' => $account->pass_raw,
+    );
+    for ($i = 0; $i < $hourly_threshold; $i++) {
+      $this->drupalPost('user', $edit, t('Log in'));
+    }
+    $this->assertText($this->interfaceStrings('flood-send'), 'The "TFA sent flood" text appears');
+  }
+
+  public function testAuthentication() {
+    $account = $this->drupalCreateUser(array());
+    $edit = array(
+      'name' => $account->name,
+      'pass' => $account->pass_raw,
+    );
+    $this->drupalPost('user', $edit, t('Log in'));
+    // Check that TFA process has begun.
+    $this->assertText($this->interfaceStrings('sent'), 'The "TFA sent message" text appears');
+    $url_parts = explode('/', $this->url);
+    $login_hash = array_pop($url_parts);
+    // Get the login code.
+    $code = tfa_get_code($account->uid);
+    $edit = array(
+      'code' => $code['code'],
+    );
+    $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, t('Log in'));
+    $this->drupalGet('user');
+    $this->assertLink('Log out', 0, 'The user succesfully logged in');
+  }
+}

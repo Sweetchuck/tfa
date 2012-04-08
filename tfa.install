@@ -1,7 +1,7 @@
 <?php
 
 /**
- * @file
+ * @file tfa.install
  */
 
 /**
@@ -48,5 +48,9 @@ function tfa_schema() {
  * Implements hook_uninstall().
  */
 function tfa_uninstall() {
-  // @todo delete variables.
+  variable_del('tfa_hourly_threshold');
+  variable_del('tfa_send_message');
+  variable_del('tfa_code_length');
+  variable_del('tfa_channel');
+  variable_del('tfa_phone_field');
 }

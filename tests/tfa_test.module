@@ -1,0 +1,23 @@
+<?php
+
+define('TFA_TEST_SECRET', 'secret');
+
+/**
+ * Implements hook_tfa_api().
+ */
+function tfa_test_tfa_api() {
+  return array(
+    'title' => t('TFA test channel'),
+    'send callback' => 'tfa_test_send',
+    'address callback' => 'tfa_test_phone',
+  );
+}
+
+function tfa_test_send($account, $code, $message) {
+  watchdog('tfa_test', 'TFA Test send for @name: @message @code', array('@name' => $account->name, '@message' => $message, '@code' => $code));
+  return TRUE;
+}
+
+function tfa_test_phone($account) {
+  return '5555550983';
+}

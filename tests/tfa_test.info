@@ -1,0 +1,4 @@
+name = TFA Test Channel
+description = "Support module for testing TFA"
+core = 7.x
+hidden = TRUE
