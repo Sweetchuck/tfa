@@ -56,4 +56,9 @@ function tfa_schema() {
  */
 function tfa_uninstall() {
   drupal_uninstall_schema('tfa');
+  variable_del('tfa_hourly_threshold');
+  variable_del('tfa_send_message');
+  variable_del('tfa_code_length');
+  variable_del('tfa_channel');
+  variable_del('tfa_phone_field');
 }

@@ -4,19 +4,26 @@
  * @file Two-factor authentication for Drupal.
  */
 
-define('TFA_TEST_SECRET', 'secret');
-define('TFA_SEND_FLOOD_HIT', -1);
-
 /**
  * Implements hook_menu().
  */
 function tfa_menu() {
-  $items['tfa/%/%'] = array(
+  $items['system/tfa/%/%'] = array(
     'title' => 'Complete authentication',
     'page callback' => 'drupal_get_form',
-    'page arguments' => array('tfa_code_form', 1, 2),
-    'access callback' => 'user_is_anonymous',
+    'page arguments' => array('tfa_code_form', 2, 3),
+    'access callback' => 'tfa_entry_access',
+    'access arguments' => array(2, 3),
     'type' => MENU_CALLBACK,
+    'file' => 'tfa.pages.inc',
+  );
+  $items['admin/settings/tfa'] = array(
+    'title' => 'Two-factor Authentication',
+    'description' => 'TFA process settings',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('tfa_admin_settings'),
+    'access arguments' => array('admin tfa settings'),
+    'file' => 'tfa.pages.inc',
   );
   return $items;
 }
@@ -25,7 +32,31 @@ function tfa_menu() {
  * Implements hook_perm().
  */
 function tfa_perm() {
-  return array('skip tfa');
+  return array('skip tfa', 'admin tfa settings');
+}
+
+/**
+ * Validate access to TFA code entry form.
+ */
+function tfa_entry_access($uid, $check_hash) {
+  // User must be anonymous for the code entry page.
+  if (!user_is_anonymous()) {
+    return FALSE;
+  }
+  // Generate a hash for this account.
+  $account = user_load(array('uid' => $uid));
+  $hash = tfa_login_hash($account);
+  $code = tfa_get_code($uid);
+  // Hash must be valid and the code must have been created within the day.
+  return ($hash == $check_hash) && !empty($code) && ($code['created'] > time() - 86400);
+}
+
+/**
+ * Implements hook_cron().
+ */
+function tfa_cron() {
+  // Remove entries from the tfa table that are older than 1 day.
+  db_query('DELETE FROM {tfa} WHERE created < %d', time() - 86400);
 }
 
 /**
@@ -33,7 +64,7 @@ function tfa_perm() {
  */
 function tfa_user($op, &$edit, &$account, $category = FALSE) {
   global $user;
-  if ($op == 'login' && tfa_send_method_available() && !user_access('skip tfa', $account)) {
+  if ($op == 'login' && !user_access('skip tfa', $account) && tfa_ready($account)) {
     // If a code is set and not marked accepted provide TFA code process.
     $code = tfa_get_code($account->uid);
     if (!empty($code) && $code['accepted']) {
@@ -48,38 +79,89 @@ function tfa_user($op, &$edit, &$account, $category = FALSE) {
       session_destroy();
       module_invoke_all('user', 'logout', NULL, $user);
       // Force anonymous user.
-      $user = user_load(array('uid' => 0));
-      unset($_REQUEST['destination']);
+      $user = drupal_anonymous_user();
 
-      // @todo can $account be used instead of reloading?
       $signatory = user_load(array('uid' => $uid));
       // Generate and store code.
       $code = tfa_generate_code($signatory);
       tfa_store_code($signatory->uid, $code);
       // Start send and redirection process.
-      tfa_process($signatory);
+      tfa_tfa_process($signatory);
     }
+  }
+}
+
+/**
+ * Determine if TFA is properly configured and setup for an account.
+ */
+function tfa_ready($account) {
+  $module = variable_get('tfa_channel', 'sms');
+  $function = $module . '_tfa_api';
+  // Verify channel is setup.
+  if (empty($module) || !function_exists($function)) {
+    return FALSE;
+  }
+  $channel = $function();
+  // Verify there is an address (phone or other method) for this account.
+  $function = $channel['address callback'];
+  if (!function_exists($function)) {
+    return FALSE;
+  }
+  $address = $function($account);
+  if (empty($address)) {
+    return FALSE;
+  }
+  return TRUE;
+}
+
+/**
+ * Implements hook_help().
+ */
+function tfa_help($path, $arg) {
+  switch ($path) {
+    case 'admin/help#tfa':
+      $output = '';
+      $output .= '<h3>' . t('Two-factor Authentication') . '</h3>';
+      $output .= '<p>' . t("TFA requires a communication channel to transfer the login code and an address to send to. By default, TFA will use the SMS Framework if installed. Enable the Profile module and add a field to store phone numbers to enable TFA.") . '<p>';
+      return $output;
   }
 }
 
 /**
  * Send the code and redirect to entry form.
  */
-function tfa_process($account) {
-  // Send the code and if succesfull send to entry form.
-  $send_result = tfa_send_code($account);
-  if ($send_result !== TFA_SEND_FLOOD_HIT && $send_result !== FALSE) {
+function tfa_tfa_process($account) {
+  // Send the code and if succesfull provide the entry form.
+  if (!flood_is_allowed('tfa_send', variable_get('tfa_hourly_threshold', 5))) {
+    drupal_set_message(t('You have reached the hourly threshold for login attempts. Please try again later.'), 'error');
+    drupal_access_denied();
+    exit;
+  }
+
+  if (tfa_send_code($account)) {
+    // Clear any previous validation flood entries.
+    db_query("DELETE FROM {flood} WHERE event = '%s' AND hostname = '%s'", 'tfa_validate', ip_address());
+    // Register send event.
+    flood_register_event('tfa_send');
+
     // Generate hash for code entry form.
     $login_hash = tfa_login_hash($account);
-    drupal_goto('tfa/' . $account->uid . '/' . $login_hash);
-  }
-  elseif ($send_result === TFA_SEND_FLOOD_HIT) {
-    drupal_set_message(t('You have reached the hourly threshold for send attempts. Please try again later.'), 'error');
+
+    // Hold onto destination and unset GET parameter.
+    $query = NULL;
+    if (arg(0) == 'user' && arg(1) == 'reset') {
+      $query = array('destination' => 'user/' . $account->uid . '/edit');
+    }
+    if (!empty($_REQUEST['destination'])) {
+      $query = array('destination' => $_REQUEST['destination']);
+    }
+    unset($_REQUEST['destination']);
+    drupal_goto('system/tfa/' . $account->uid . '/' . $login_hash, $query);
   }
   else {
-    drupal_set_message(t('There was an error trying to send, please try again later or contact a site administator.'));
+    drupal_set_message(t('There was an error while trying to send the login code, please try again later or contact a site administator.'));
   }
-  // Do not drupal_goto for failures.
+  drupal_goto('user');
 }
 
 /**
@@ -89,8 +171,8 @@ function tfa_process($account) {
  * @return string Random hash.
  */
 function tfa_login_hash($account) {
-  // @todo consider timeouts and better hashing
-  return md5($account->name . $account->pass . $account->login);
+  $data = implode(':', array($account->name, $account->pass, $account->login));
+  return md5($data);
 }
 
 /**
@@ -100,12 +182,9 @@ function tfa_login_hash($account) {
  * @return string Random code or "nonce".
  */
 function tfa_generate_code($account) {
-  if (variable_get('tfa_test_mode', TRUE)) {
-    $code = TFA_TEST_SECRET;
-  }
-  else {
-    $code = '';
-  }
+  $code_length = variable_get('tfa_code_length', 6);
+  // Generate a randomized string of characters.
+  $code = substr(str_shuffle(str_repeat("123456789abcdefghjkmnpqrstuvwxyz", 5)), 0, $code_length);
   return $code;
 }
 
@@ -116,36 +195,20 @@ function tfa_generate_code($account) {
  * @return bool True or False if the code was sent on the secondary channel.
  */
 function tfa_send_code($account) {
-  if (!flood_is_allowed('tfa_send', variable_get('tfa_hourly_threshold', 5))) {
-    return TFA_SEND_FLOOD_HIT;
-  }
   $code = tfa_get_code($account->uid);
-  // Actual code is within element 'code'.
-  $code = $code['code'];
-  $message = variable_get('tfa_send_message', t('Login code'));
-  // Variable send method, defaults to SMS Framework.
-  $tfa_send = variable_get('tfa_send_method', '_tfa_send_code');
-  if (tfa_send_method_available()) {
-    $result = $tfa_send($account, $code, $message);
-    if ($result !== FALSE) {
-      // Register send event.
-      flood_register_event('tfa_send');
-      return $result;
-    }
+  $code = $code['code']; // Actual code is within element 'code'.
+  $message = check_plain(variable_get('tfa_send_message', 'Login code'));
+
+  // Variable send method, defaults to TFA method using SMS Framework.
+  $module = variable_get('tfa_channel', 'sms');
+  $function = $module . '_tfa_api';
+  if (!empty($module) && function_exists($function)) {
+    $channel = $function();
+    $function = $channel['send callback'];
+    $result = $function($account, $code, $message);
+    return $result;
   }
   return FALSE;
-}
-
-function _tfa_send_code($account, $code, $message = '') {
-  $phone_field = variable_get('tfa_phone_field', 'profile_phone');
-  $phone_number = $account->{$phone_field};
-  if (variable_get('tfa_test_mode', TRUE)) {
-    $message = variable_get('twilio_pin', '') . ' ' . $code;
-  }
-  else {
-    $message = '';
-  }
-  return sms_send($phone_number, $message);
 }
 
 /**
@@ -163,7 +226,6 @@ function tfa_store_code($uid, $code) {
     'accepted' => 0,
     'created' => time(),
   );
-  // @todo Allow code updates?
   if (!$previous_code) {
     return drupal_write_record('tfa', $record);
   }
@@ -179,7 +241,7 @@ function tfa_store_code($uid, $code) {
  * @return array Array of with keys 'code' string and 'accepted' bool.
  */
 function tfa_get_code($uid) {
-  $result = db_fetch_array(db_query("SELECT code, accepted FROM {tfa} WHERE uid = %d", $uid));
+  $result = db_fetch_array(db_query("SELECT code, accepted, created FROM {tfa} WHERE uid = %d", $uid));
   if (!empty($result)) {
     return $result;
   }
@@ -205,130 +267,37 @@ function tfa_delete_code($uid) {
 }
 
 /**
- * Form for code entry.
+ * Implements hook_tfa_api() on behalf of the SMS module.
  */
-function tfa_code_form($form_state, $uid, $hash = NULL) {
-  // Confirm hash is valid. @todo could account for timeouts.
-  $account = user_load(array('uid' => $uid));
-  $valid_hash = tfa_login_hash($account);
-  if ($hash != $valid_hash) {
-    drupal_access_denied();
-    exit();
-  }
-
-  if (!flood_is_allowed('tfa_validate', variable_get('tfa_hourly_threshold', 5))) {
-    drupal_set_message(t('You have reached the threshold for incorrect code entry attempts. Please try again later.'), 'error');
-    drupal_access_denied();
-    exit;
-  }
-
-  // Hack to get around Drupal's forced validation on required elements.
-  if ($_POST['op'] == t('Resend code')) {
-    // @todo generate a new code?
-    tfa_process($account);
-    // tfa_process() doesn't redirect user so do so here.
-    drupal_goto('user');
-  }
-
-  $form['desc'] = array(
-    '#value' => t('A one-time code has been sent to you. Enter it here to finalize authentication.'),
+function sms_tfa_api() {
+  return array(
+    'title' => t('SMS Framework'),
+    'send callback' => '_tfa_send_code',
+    'address callback' => 'tfa_get_phone_number',
   );
-  $form['uid'] = array(
-    '#type' => 'value',
-    '#value' => $uid,
-  );
-  $form['code'] = array(
-    '#type' => 'textfield',
-    '#title' => t('Code'),
-    '#required' => TRUE,
-    '#description' => t('Enter the code you were sent.'),
-  );
-  // Provide option to resend code.
-  $form['resend'] = array(
-    '#type' => 'fieldset',
-    '#title' => t('Resend code?'),
-    '#collapsible' => TRUE,
-    '#collapsed' => TRUE,
-    '#description' => t('If you have not received the code you may resend it up to !count times (in an hour).', array('!count' => variable_get('tfa_hourly_threshold', 5))),
-  );
-  $form['resend']['send'] = array(
-    '#type' => 'button',
-    '#value' => t('Resend code'),
-    '#executes_submit_callback' => FALSE,
-  );
-  
-  $form['login'] = array(
-    '#type' => 'submit',
-    '#value' => t('Log in'),
-  );
-
-  return $form;
 }
 
 /**
- * Validate handler for TFA login form.
+ * Address callback for SMS, uses tfa_phone_field variable.
  */
-function tfa_code_form_validate($form, &$form_state) {
-  // Validate code.
-  // @todo is it possible to alter the UID client-side and flood out another user?
-  $code = tfa_get_code($form_state['values']['uid']);
-  if ($code['code'] != $form_state['values']['code']) {
-    form_set_error('code', t('Invalid code.'));
-    // Register failure for purposes of flood control.
-    flood_register_event('tfa_validate');
-  }
-}
-
-/**
- * Submit handler for TFA login form.
- */
-function tfa_code_form_submit($form, &$form_state) {
-  global $user;
-
-  $uid = $form_state['values']['uid'];
-  $account = user_load(array('uid' => $uid));
-  $edit = array();
-
-  $user = $account;
-  // Update the user table timestamp noting user has logged in.
-  $user->login = time();
-  db_query("UPDATE {users} SET login = %d WHERE uid = %d", $user->login, $user->uid);
-
-  // Regenerate the session ID to prevent against session fixation attacks.
-  sess_regenerate();
-  // Mark code as accepted to avoid repeating TFA process.
-  tfa_accept_code($account->uid);
-  user_module_invoke('login', $edit, $user);
-  $form_state['redirect'] = 'user/' . $user->uid; // @todo destination
-}
-
-/**
- * Implements hook_requirements().
- */
-function tfa_requirements($phase) {
-  if ($phase == 'runtime') {
-    $severity = REQUIREMENT_OK;
-    $message = t('Channel available');
-    if (!tfa_send_method_available()) {
-      $severity = REQUIREMENT_ERROR;
-      $message = t('Channel not available');
-    }
-    $requirements['tfa'] = array(
-      'title' => t('Two-factor authentication'), 
-      'value' => $message, 
-      'severity' => $severity,
-    );
-    return $requirements;
-  }
-}
-
-/**
- * Helper function determines if a TFA channel is available.
- */
-function tfa_send_method_available() {
-  $method = variable_get('tfa_send_method', '_tfa_send_code');
-  if ($method === '_tfa_send_code' && !module_exists('sms')) {
+function tfa_get_phone_number($account) {
+  $phone_field = variable_get('tfa_phone_field', 'profile_phone_number');
+  if (empty($phone_field)) {
     return FALSE;
   }
-  return function_exists($method);
+  if (!isset($account->{$phone_field}) || empty($account->{$phone_field})) {
+    return FALSE;
+  }
+  $phone_number = $account->{$phone_field};
+  return $phone_number;
+}
+
+/**
+ * Send the code using SMS Framework.
+ */
+function _tfa_send_code($account, $code, $message = '') {
+  $phone_number = tfa_get_phone_number($account);
+
+  $message = $message .' '. $code;
+  return sms_send($phone_number, $message);
 }
