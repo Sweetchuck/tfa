@@ -34,7 +34,7 @@ function tfa_code_form($form_state, $uid, $hash = NULL) {
     '#title' => t('Resend code'),
     '#collapsible' => TRUE,
     '#collapsed' => TRUE,
-    '#description' => t('If you have not received the code you may resend it up to !count times (in an hour).', array('!count' => variable_get('tfa_hourly_threshold', 5))),
+    '#description' => t('If you have not received the code you can resend it. You can only resnd the code !count times per hour).', array('!count' => variable_get('tfa_hourly_threshold', 5))),
   );
   $form['resend']['send'] = array(
     '#type' => 'button',
