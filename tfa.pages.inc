@@ -86,7 +86,7 @@ function tfa_code_form_submit($form, &$form_state) {
   drupal_session_regenerate();
   // Mark code as accepted to avoid repeating TFA process.
   tfa_accept_code($account->uid);
-  watchdog('tfa', 'TFA login code accepted for @name', array('@name' => $user->name));
+  watchdog('tfa', 'TFA login code accepted for @name. Session opened.', array('@name' => $user->name));
   // Truncate flood for user.
   flood_clear_event('tfa_send');
   flood_clear_event('tfa_validate');
@@ -154,6 +154,12 @@ function tfa_admin_settings() {
     $form['tfa_phone_field']['#options'] = $options;
     $form['tfa_phone_field']['#description'] = t('Choose the field that stores phone numbers.');
   }
+  $form['tfa_required'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Require TFA process'),
+    '#default_value' => variable_get('tfa_required', 6),
+    '#description' => t('Require TFA to login except for accounts that have permission to "Skip TFA". Note, any account that is not setup for TFA (and is not set to skip TFA) will not be able to login.'),
+  );
 
   $form['tfa_send_message'] = array(
     '#type' => 'textfield',
