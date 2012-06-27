@@ -90,7 +90,7 @@ function tfa_code_form_submit($form, &$form_state) {
   sess_regenerate();
   // Mark code as accepted to avoid repeating TFA process.
   tfa_accept_code($account->uid);
-  watchdog('tfa', 'TFA login code accepted for @name', array('@name' => $user->name));
+  watchdog('tfa', 'TFA login code accepted for @name. Session opened.', array('@name' => $user->name));
   // Truncate flood for user.
   db_query("DELETE FROM {flood} WHERE event = '%s' AND hostname = '%s'", 'tfa_send', ip_address());
   db_query("DELETE FROM {flood} WHERE event = '%s' AND hostname = '%s'", 'tfa_validate', ip_address());
