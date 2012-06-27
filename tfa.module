@@ -77,6 +77,7 @@ function tfa_user($op, &$edit, &$account, $category = FALSE) {
       $uid = $user->uid;
 
       // Destroy the current session to halt standard authentication process.
+      watchdog('tfa', 'Session closed for %name.', array('%name' => $account->name));
       session_destroy();
       module_invoke_all('user', 'logout', NULL, $user);
       // Force anonymous user.
