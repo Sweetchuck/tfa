@@ -70,6 +70,7 @@ function tfa_user($op, &$edit, &$account, $category = FALSE) {
     if (!empty($code) && $code['accepted']) {
       // Code has been validated, delete and let login continue.
       tfa_delete_code($account->uid);
+      drupal_goto('node');
     }
     else {
       // Hold onto UID because $user will be replaced with Anonymous.
