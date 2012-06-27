@@ -146,6 +146,12 @@ $ready = tfa_ready($account);
       $form['tfa_phone_field']['#description'] = t('Choose the field that stores phone numbers.');
     }
   }
+  $form['tfa_required'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Require TFA process'),
+    '#default_value' => variable_get('tfa_required', 0),
+    '#description' => t('Require TFA to login except for accounts that have permission to "Skip TFA". Note, any account that is not setup for TFA (and is not set to skip TFA) will not be able to login.'),
+  );
 
   $form['tfa_send_message'] = array(
     '#type' => 'textfield',
@@ -161,4 +167,14 @@ $ready = tfa_ready($account);
   );
 
   return system_settings_form($form);
+}
+
+/**
+ * Helper function for when TFA not setup and TFA is required to log in.
+ *
+ * Gets around https://drupal.org/node/754560.
+ */
+function tfa_denied() {
+  drupal_set_message(t('Login disallowed till your account is setup for TFA. Contact a site administrator.'), 'error');
+  drupal_goto('user');
 }

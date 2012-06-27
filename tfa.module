@@ -17,6 +17,13 @@ function tfa_menu() {
     'type' => MENU_CALLBACK,
     'file' => 'tfa.pages.inc',
   );
+  $items['system/tfa-denied'] = array(
+    'title' => 'TFA Denied',
+    'page callback' => 'tfa_denied',
+    'access callback' => 'user_is_anonymous',
+    'type' => MENU_CALLBACK,
+    'file' => 'tfa.pages.inc',
+  );
   $items['admin/settings/tfa'] = array(
     'title' => 'Two-factor Authentication',
     'description' => 'TFA process settings',
@@ -59,38 +66,54 @@ function tfa_cron() {
   db_query('DELETE FROM {tfa} WHERE created < %d', time() - 86400);
 }
 
+
 /**
  * Implements hook_user().
  */
 function tfa_user($op, &$edit, &$account, $category = FALSE) {
   global $user;
-  if ($op == 'login' && !user_access('skip tfa', $account) && tfa_ready($account)) {
-    // If a code is set and not marked accepted provide TFA code process.
-    $code = tfa_get_code($account->uid);
-    if (!empty($code) && $code['accepted']) {
-      // Code has been validated, delete and let login continue.
-      tfa_delete_code($account->uid);
-      drupal_goto('node');
+  if ($op == 'login') {
+    if (variable_get('tfa_required', 0) && !user_access('skip tfa', $account) && !tfa_ready($account)) {
+      _tfa_logout();
+      drupal_goto('system/tfa-denied');
     }
-    else {
-      // Hold onto UID because $user will be replaced with Anonymous.
-      $uid = $user->uid;
+    elseif (!user_access('skip tfa', $account) && tfa_ready($account)) {
+      // If a code is set and not marked accepted provide TFA code process.
+      $code = tfa_get_code($account->uid);
+      if (!empty($code) && $code['accepted']) {
+        // Code has been validated, delete and let login continue.
+        tfa_delete_code($account->uid);
+        drupal_goto('node');
+      }
+      else {
+        // Hold onto UID because $user will be replaced with Anonymous.
+        $uid = $user->uid;
 
-      // Destroy the current session to halt standard authentication process.
-      watchdog('tfa', 'Session closed for %name.', array('%name' => $account->name));
-      session_destroy();
-      module_invoke_all('user', 'logout', NULL, $user);
-      // Force anonymous user.
-      $user = drupal_anonymous_user();
+        // Destroy the current session to halt standard authentication process.
+        _tfa_logout();
 
-      $signatory = user_load(array('uid' => $uid));
-      // Generate and store code.
-      $code = tfa_generate_code($signatory);
-      tfa_store_code($signatory->uid, $code);
-      // Start send and redirection process.
-      tfa_tfa_process($signatory);
+        $signatory = user_load(array('uid' => $uid));
+        // Generate and store code.
+        $code = tfa_generate_code($signatory);
+        tfa_store_code($signatory->uid, $code);
+        // Start send and redirection process.
+        tfa_tfa_process($signatory);
+      }
     }
   }
+}
+
+/**
+ * Logout user. Similar to user_logout() but doesn't redirect.
+ */
+function _tfa_logout() {
+  global $user;
+  watchdog('tfa', 'Session closed for %name.', array('%name' => $user->name));
+  session_destroy();
+  module_invoke_all('user', 'logout', NULL, $user);
+
+  // Force anonymous user.
+  $user = drupal_anonymous_user();
 }
 
 /**
@@ -125,6 +148,11 @@ function tfa_help($path, $arg) {
       $output = '';
       $output .= '<h3>' . t('Two-factor Authentication') . '</h3>';
       $output .= '<p>' . t("TFA requires a communication channel to transfer the login code and an address to send to. By default, TFA will use the SMS Framework if installed. Enable the Profile module and add a field to store phone numbers to enable TFA.") . '<p>';
+      $output .= '<p>' . t('<a href="!url">Read the TFA configuration documentation</a> on drupal.org.', array('!url' => url('http://drupal.org/node/1663240'))) . '</p>';
+      return $output;
+    case 'admin/settings/tfa':
+      $output = '<p>' . t('For TFA to properly function you must select a communication channel for the TFA code. If using the SMS Framework create and select a user account field that contains the number to use. <a href="!url">Read the TFA configuration documentation</a> on drupal.org.', array('!url' => url('http://drupal.org/node/1663240'))) . '</p>';
+      $output .= '<p>' . t('Note, unless you choose the "Require TFA process" option users will <strong>only be required to follow the TFA process</strong> if they have an address setup for code delivery.') . '</p>';
       return $output;
   }
 }
