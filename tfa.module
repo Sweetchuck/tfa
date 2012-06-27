@@ -83,6 +83,10 @@ function tfa_user_login(&$edit, $account) {
     if (!empty($code) && $code['accepted']) {
       // Code has been validated, delete and let login continue.
       tfa_delete_code($account->uid);
+      $query = drupal_get_query_parameters();
+      if (empty($query['destination'])) {
+        $_GET['destination'] = 'node';
+      }
     }
     else {
       // Destroy the current session to halt standard authentication process.

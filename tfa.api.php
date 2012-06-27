@@ -44,3 +44,49 @@ function hook_tfa_api() {
     'address callback' => '_tfa_lookup_address',
   );
 }
+
+/**
+ * Example TFA API implementation to use email as code transfer channel.
+ */
+
+/**
+ * Implements hook_tfa_api().
+ */
+function email_tfa_tfa_api() {
+  return array(
+    'title' => t('Email code'),
+    'send callback' => 'email_tfa_send',
+    'address callback' => 'email_tfa_get_address',
+  );
+}
+
+/**
+ * Address collector for Email TFA.
+ */
+function email_tfa_get_address($account) {
+  return $account->mail;
+}
+
+/**
+ * Send method for Email TFA.
+ */
+function email_tfa_send($account, $code, $message) {
+  $params = array(
+    'code' => $code,
+    'message' => $message,
+  );
+  $from = variable_get('site_mail', 'admin@example.com');
+  $result = drupal_mail('email_tfa', 'tfa_send', $account->mail, user_preferred_language($account), $params, $from, TRUE);
+  return $result['result'];
+}
+
+/**
+ * Implements hook_mail().
+ */
+function email_tfa_mail($key, &$message, $params) {
+  if ($key == 'tfa_send') {
+    $message['subject'] = t('Login code from @site-name', array('@site-name' => variable_get('site_name', 'Drupal')));
+    $message['body'][] = t('@message', array('@message' => $params['message']));
+    $message['body'][] = t('@code', array('@code' => $params['code']));
+  }
+}
