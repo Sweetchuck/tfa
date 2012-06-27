@@ -157,7 +157,7 @@ function tfa_admin_settings() {
   $form['tfa_required'] = array(
     '#type' => 'checkbox',
     '#title' => t('Require TFA process'),
-    '#default_value' => variable_get('tfa_required', 6),
+    '#default_value' => variable_get('tfa_required', 0),
     '#description' => t('Require TFA to login except for accounts that have permission to "Skip TFA". Note, any account that is not setup for TFA (and is not set to skip TFA) will not be able to login.'),
   );
 
