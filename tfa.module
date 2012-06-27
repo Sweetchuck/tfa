@@ -76,7 +76,6 @@ function tfa_cron() {
  */
 function tfa_user_login(&$edit, $account) {
   global $user;
-  // TFA is required if user cannot skip and there is a communication channel.
   if (variable_get('tfa_required', 0) && !user_access('skip tfa', $account) && !tfa_ready($account)) {
     _tfa_logout();
     drupal_set_message(t('Login disallowed till your account is setup for TFA. Contact a site administrator.'), 'error');
@@ -151,9 +150,10 @@ function tfa_help($path, $arg) {
       $output = '';
       $output .= '<h3>' . t('Two-factor Authentication') . '</h3>';
       $output .= '<p>' . t("TFA requires a communication channel to transfer the login code and an address to send to. By default, TFA will use the SMS Framework if installed. Add a user field to store phone numbers to enable TFA.") . '<p>';
+      $output .= '<p>' . t('<a href="!url">Read the TFA configuration documentation</a> on drupal.org.', array('!url' => url('http://drupal.org/node/1663240'))) . '</p>';
       return $output;
     case 'admin/config/people/tfa':
-      $output = '<p>' . t('For TFA to properly function you must select a communication channel for the TFA code. If using the SMS Framework create and select a user account field that contains the number to use. <a href="!url">Read the TFA configuration documentation</a>.', array('!url' => url('http://drupal.org/node/1663240'))) . '</p>';
+      $output = '<p>' . t('For TFA to properly function you must select a communication channel for the TFA code. If using the SMS Framework create and select a user account field that contains the number to use. <a href="!url">Read the TFA configuration documentation</a> on drupal.org.', array('!url' => url('http://drupal.org/node/1663240'))) . '</p>';
       $output .= '<p>' . t('Note, unless you choose the "Require TFA process" option users will <strong>only be required to follow the TFA process</strong> if they have an address setup for code delivery.') . '</p>';
       return $output;
   }
