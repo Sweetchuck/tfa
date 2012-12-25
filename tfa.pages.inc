@@ -36,16 +36,15 @@ function tfa_code_form($form, $form_state, $uid, $hash = NULL) {
     '#collapsed' => TRUE,
     '#description' => t('If you have not received the code you may resend it. You can only resend the code !count times per hour.', array('!count' => variable_get('tfa_hourly_threshold', 5))),
   );
+  $form['login'] = array(
+    '#type' => 'submit',
+    '#value' => t('Log in'),
+  );
   $form['resend']['send'] = array(
     '#type' => 'submit',
     '#value' => t('Resend code'),
     '#limit_validation_errors' => array(),
     '#submit' => array('tfa_resend_code'),
-  );
-
-  $form['login'] = array(
-    '#type' => 'submit',
-    '#value' => t('Log in'),
   );
 
   return $form;
@@ -57,7 +56,7 @@ function tfa_code_form($form, $form_state, $uid, $hash = NULL) {
 function tfa_code_form_validate($form, &$form_state) {
   // Validate code.
   $code = tfa_get_code($form_state['values']['uid']);
-  if ($code['code'] != $form_state['values']['code']) {
+  if (!empty($code) && $code['code'] != $form_state['values']['code']) {
     form_set_error('code', t('Invalid code.'));
     // Register failure for purposes of flood control.
     flood_register_event('tfa_validate');
@@ -68,29 +67,9 @@ function tfa_code_form_validate($form, &$form_state) {
  * Submit handler for TFA login form.
  */
 function tfa_code_form_submit($form, &$form_state) {
-  global $user;
-
   $uid = $form_state['values']['uid'];
   $account = user_load($uid);
-  $edit = array();
-
-  $user = $account;
-  // Update the user table timestamp noting user has logged in.
-  $user->login = REQUEST_TIME;
-  db_update('users')
-    ->fields(array('login' => $user->login))
-    ->condition('uid', $user->uid)
-    ->execute();
-
-  // Regenerate the session ID to prevent against session fixation attacks.
-  drupal_session_regenerate();
-  // Mark code as accepted to avoid repeating TFA process.
-  tfa_accept_code($account->uid);
-  watchdog('tfa', 'TFA login code accepted for @name. Session opened.', array('@name' => $user->name));
-  // Truncate flood for user.
-  flood_clear_event('tfa_send');
-  flood_clear_event('tfa_validate');
-  user_module_invoke('login', $edit, $user);
+  tfa_login($account);
 }
 
 /**
@@ -100,7 +79,7 @@ function tfa_resend_code($form, &$form_state) {
   $account = user_load($form['uid']['#value']);
   $code = tfa_generate_code($account);
   tfa_store_code($account->uid, $code);
-  tfa_tfa_process($account);
+  _tfa_tfa_process($account);
 }
 
 /**

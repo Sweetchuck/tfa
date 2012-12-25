@@ -1,6 +1,11 @@
 <?php
 
 /**
+ * @file tfa.test.
+ * Drupal test cases for TFA.
+ */
+
+/**
 * Tests the functionality of the TFA module.
 */
 class TFATestCase extends DrupalWebTestCase {
@@ -17,8 +22,6 @@ class TFATestCase extends DrupalWebTestCase {
   public function setUp() {
     // Enable TFA module and the test channel module.
     parent::setUp('tfa', 'tfa_test');
-    // Use the TFA test channel.
-    variable_set('tfa_channel', 'tfa_test');
   }
 
   /**
@@ -34,11 +37,13 @@ class TFATestCase extends DrupalWebTestCase {
         return 'You have reached the hourly threshold for login attempts. Please try again later.';
       case 'flood-validate':
         return 'You have reached the threshold for incorrect code entry attempts. Please try again later.';
-      
     }
   }
 
   public function testFloodControl() {
+    // Use the TFA test channel.
+    variable_set('tfa_channel', 'tfa_test');
+    
     // Set the TFA hourly flood threshold.
     $hourly_threshold = 3;
     variable_set('tfa_hourly_threshold', $hourly_threshold);
@@ -76,9 +81,15 @@ class TFATestCase extends DrupalWebTestCase {
       $this->drupalPost('user', $edit, t('Log in'));
     }
     $this->assertText($this->interfaceStrings('flood-send'), 'The "TFA sent flood" text appears');
+    // Force clear so other tests don't unnecessarily fail.
+    flood_clear_event('tfa_send');
+    flood_clear_event('tfa_validate');
   }
 
   public function testAuthentication() {
+    // Use the TFA test channel.
+    variable_set('tfa_channel', 'tfa_test');
+
     $account = $this->drupalCreateUser(array());
     $edit = array(
       'name' => $account->name,
@@ -97,5 +108,40 @@ class TFATestCase extends DrupalWebTestCase {
     $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, t('Log in'));
     $this->drupalGet('user');
     $this->assertLink('Log out', 0, 'The user succesfully logged in');
+  }
+
+  public function testProcessAlter() {
+    // Enable process alter.
+    variable_set('tfa_channel', 'tfa_test');
+    variable_set('tfa_test_alter_process', TRUE);
+    variable_set('tfa_test_allow_skip', FALSE);
+
+    $account = $this->drupalCreateUser(array());
+    $edit = array(
+      'name' => $account->name,
+      'pass' => $account->pass_raw,
+    );
+    $this->drupalPost('user', $edit, t('Log in'));
+    // Check that TFA process has begun.
+    $this->assertText($this->interfaceStrings('sent'), 'The "TFA sent message" text appears');
+    $url_parts = explode('/', $this->url);
+    $login_hash = array_pop($url_parts);
+    // Get the login code.
+    $code = tfa_get_code($account->uid);
+    $edit = array(
+      'code' => $code['code'],
+    );
+    $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, t('Log in'));
+    $this->drupalGet('user');
+    $this->assertLink('Log out', 0, 'The user succesfully logged in');
+    $this->drupalGet('user/logout');
+    $this->assertLink('Request new password', 0, 'User has logged out');
+    $edit = array(
+      'name' => $account->name,
+      'pass' => $account->pass_raw,
+    );
+    $this->drupalPost('user', $edit, t('Log in'));
+    $this->assertNoText($this->interfaceStrings('sent'), 'The "TFA sent message" text does not appear');
+    $this->assertLink('Log out', 0, 'TFA process alter sucessfully used to log in user by skipping TFA code process');
   }
 }

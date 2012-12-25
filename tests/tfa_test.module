@@ -1,6 +1,9 @@
 <?php
 
-define('TFA_TEST_SECRET', 'secret');
+/**
+ * @file tfa_test.module.
+ * A mock module for testing TFA.
+ */
 
 /**
  * Implements hook_tfa_api().
@@ -13,11 +16,53 @@ function tfa_test_tfa_api() {
   );
 }
 
+/**
+ * TFA test send callback.
+ */
 function tfa_test_send($account, $code, $message) {
-  watchdog('tfa_test', 'TFA Test send for @name: @message @code', array('@name' => $account->name, '@message' => $message, '@code' => $code));
+  // Don't actually do anything.
   return TRUE;
 }
 
+/**
+ * TFA test address callback.
+ */
 function tfa_test_phone($account) {
   return '5555550983';
+}
+
+/**
+ * Implements hook_tfa_processes_alter().
+ */
+function tfa_test_tfa_processes_alter(&$processes) {
+  $alter_process = variable_get('tfa_test_alter_process', FALSE);
+  if ($alter_process) {
+    array_unshift($processes, 'tfa_test_skip_tfa');
+  }
+}
+
+/**
+ * TFA process chain alter callback.
+ */
+function tfa_test_skip_tfa($account, &$context) {
+  $skip_uid = variable_get('tfa_test_allow_skip', FALSE);
+  if ($account->uid == $skip_uid) {
+    return TFA_PROCESS_LOGIN;
+  }
+  return TFA_PROCESS_NEXT;
+}
+
+/**
+ * Implements hook_form_tfa_code_form_alter().
+ */
+function tfa_test_form_tfa_code_form_alter(&$form) {
+  $form['#submit'] = array_merge(array('tfa_test_submit'), $form['#submit']);
+}
+
+/**
+ * Submit callback for TFA test to define which account can skip TFA on next login.
+ */
+function tfa_test_submit($form, &$form_state) {
+  $uid = $form_state['values']['uid'];
+  variable_set('tfa_test_allow_skip', $uid);
 }
