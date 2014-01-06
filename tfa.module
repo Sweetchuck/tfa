@@ -12,9 +12,9 @@ define('TFA_PROCESS_NEXT', 'next');
  */
 function tfa_menu() {
   $items['system/tfa/%/%'] = array(
-    'title' => 'Complete authentication',
+    'title' => 'Two-Factor Authentication',
     'page callback' => 'drupal_get_form',
-    'page arguments' => array('tfa_code_form', 2, 3),
+    'page arguments' => array('tfa_form', 2, 3),
     'access callback' => 'tfa_entry_access',
     'access arguments' => array(2, 3),
     'type' => MENU_CALLBACK,
@@ -35,16 +35,11 @@ function tfa_menu() {
  * Validate access to TFA code entry form.
  */
 function tfa_entry_access($uid, $check_hash) {
-  // User must be anonymous for the code entry page.
-  if (!user_is_anonymous()) {
-    return FALSE;
-  }
   // Generate a hash for this account.
   $account = user_load($uid);
   $hash = tfa_login_hash($account);
-  $code = tfa_get_code($uid);
   // Hash must be valid and the code must have been created within the day.
-  return ($hash == $check_hash) && !empty($code) && ($code['created'] > REQUEST_TIME - 86400);
+  return ($hash == $check_hash);// @todo && !empty($code) && ($code['created'] > REQUEST_TIME - 86400);
 }
 
 /**
@@ -79,6 +74,12 @@ function tfa_cron() {
  */
 function tfa_user_login(&$edit, $account) {
   global $user;
+
+  // $tfa = tfa_get_
+  // if (!$tfa->loginAllowed($account) then tfa_logout()
+  // elseif ($tfa->beginTfa($account))
+  //   redirect to tfa callback
+
   if (variable_get('tfa_required', 0) && !user_access('skip tfa', $account) && !tfa_ready($account)) {
     tfa_logout();
     drupal_set_message(t('Login disallowed till your account is setup for TFA. Contact a site administrator.'), 'error');
@@ -96,8 +97,8 @@ function tfa_user_login(&$edit, $account) {
     // Allow other modules to alter the TFA authentication process. Callers may
     // return TFA_PROCESS_LOGIN to stop the TFA process chain and authenticate
     // the user or may allow the chain to continue by returning NULL or
-    // TFA_PROCESS_NEXT. Callers must be aware that processes run before 
-    // tfa_code_process() may be executing on a valid Drupal session (login not 
+    // TFA_PROCESS_NEXT. Callers must be aware that processes run before
+    // tfa_code_process() may be executing on a valid Drupal session (login not
     // complete, however). Removing tfa_code_process() from the chain will
     // require callers to force logout with tfa_logout() if desired.
     // See tfa.api.php for more information.
@@ -170,7 +171,7 @@ function tfa_login($account) {
  *
  * @return bool True if the account is setup for TFA, false if not.
  */
-function tfa_ready($account) {
+/*function tfa_ready($account) {
   $module = variable_get('tfa_channel', 'sms');
   $function = $module . '_tfa_api';
   // Verify channel is setup.
@@ -188,7 +189,7 @@ function tfa_ready($account) {
     return FALSE;
   }
   return TRUE;
-}
+}*/
 
 /**
  * Implements hook_help().

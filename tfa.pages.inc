@@ -7,7 +7,7 @@
 /**
  * Form for code entry.
  */
-function tfa_code_form($form, $form_state, $uid, $hash = NULL) {
+function tfa_form($form, $form_state, $uid, $hash = NULL) {
   // Check flood.
   if (!flood_is_allowed('tfa_validate', variable_get('tfa_hourly_threshold', 5))) {
     drupal_set_message(t('You have reached the threshold for incorrect code entry attempts. Please try again later.'), 'error');
@@ -15,6 +15,11 @@ function tfa_code_form($form, $form_state, $uid, $hash = NULL) {
   }
 
   $account = user_load($uid);
+
+  // $tfa = tfa_get_
+  // $tfa->beginProcess()
+  // $form = $tfa->entryForm($form)
+  // return $form;
 
   $form['desc'] = array(
     '#markup' => t('Enter your received login code to continue.'),
@@ -55,6 +60,9 @@ function tfa_code_form($form, $form_state, $uid, $hash = NULL) {
  */
 function tfa_code_form_validate($form, &$form_state) {
   // Validate code.
+  // $tfa = tfa_get_
+  // $tfa->validateForm($form_state);
+  // if (!$tfa->validEntry()) then form_set_error and flood register
   $code = tfa_get_code($form_state['values']['uid']);
   if (!empty($code) && $code['code'] != $form_state['values']['code']) {
     form_set_error('code', t('Invalid code.'));
@@ -67,6 +75,9 @@ function tfa_code_form_validate($form, &$form_state) {
  * Submit handler for TFA login form.
  */
 function tfa_code_form_submit($form, &$form_state) {
+  // $tfa = tfa_get_
+  // $tfa->submitForm($form_state);
+  //
   $uid = $form_state['values']['uid'];
   $account = user_load($uid);
   tfa_login($account);
