@@ -15,30 +15,20 @@ function tfa_schema() {
         'unsigned' => TRUE,
         'not null' => TRUE,
         'default' => 0,
-        'description' => 'Primary Key: {users}.uid for user.',
       ),
-      'code' => array(
+      'type' => array(
         'type' => 'varchar',
-        'length' => 160,
+        'length' => 32,
         'not null' => TRUE,
         'default' => '',
-      ),
-      'accepted' => array(
-        'type' => 'int',
-        'not null' => TRUE,
-        'default' => 0,
-        'size' => 'tiny',
       ),
       'created' => array(
         'type' => 'int',
         'not null' => TRUE,
         'default' => 0,
-      ),
+      )
     ),
     'primary key' => array('uid'),
-    'indexes' => array(
-      'code' => array('code'),
-    ),
   );
 
   return $schema;
@@ -48,6 +38,9 @@ function tfa_schema() {
  * Implements hook_uninstall().
  */
 function tfa_uninstall() {
+  variable_del('tfa_send');
+  variable_del('tfa_topt');
+
   variable_del('tfa_hourly_threshold');
   variable_del('tfa_send_message');
   variable_del('tfa_code_length');

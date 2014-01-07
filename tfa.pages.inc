@@ -4,25 +4,26 @@
  * @file tfa.pages.inc
  */
 
-/**
- * Form for code entry.
- */
-function tfa_form($form, $form_state, $uid, $hash = NULL) {
-  // Check flood.
+
+function tfa_begin($uid) {
+  $account = user_load($uid);
+
+  $tfa = tfa_get_process($account);
+  $tfa->begin();
+
+  return drupal_get_form('tfa_code_entry_form', $account->uid);
+}
+
+function tfa_code_entry_form($form, $form_state, $uid) {
+
+  // Check validation flood.
   if (!flood_is_allowed('tfa_validate', variable_get('tfa_hourly_threshold', 5))) {
     drupal_set_message(t('You have reached the threshold for incorrect code entry attempts. Please try again later.'), 'error');
     return drupal_access_denied();
   }
 
-  $account = user_load($uid);
-
-  // $tfa = tfa_get_
-  // $tfa->beginProcess()
-  // $form = $tfa->entryForm($form)
-  // return $form;
-
   $form['desc'] = array(
-    '#markup' => t('Enter your received login code to continue.'),
+    '#markup' => t('Enter code to continue.'),
   );
   $form['uid'] = array(
     '#type' => 'value',
@@ -34,63 +35,44 @@ function tfa_form($form, $form_state, $uid, $hash = NULL) {
     '#required' => TRUE,
   );
   // Provide option to resend code.
-  $form['resend'] = array(
+  /*$form['resend'] = array(
     '#type' => 'fieldset',
     '#title' => t('Resend code'),
     '#collapsible' => TRUE,
     '#collapsed' => TRUE,
     '#description' => t('If you have not received the code you may resend it. You can only resend the code !count times per hour.', array('!count' => variable_get('tfa_hourly_threshold', 5))),
   );
-  $form['login'] = array(
-    '#type' => 'submit',
-    '#value' => t('Log in'),
-  );
   $form['resend']['send'] = array(
     '#type' => 'submit',
     '#value' => t('Resend code'),
     '#limit_validation_errors' => array(),
     '#submit' => array('tfa_resend_code'),
+  );*/
+  $form['login'] = array(
+    '#type' => 'submit',
+    '#value' => t('Submit'),
   );
 
   return $form;
 }
 
-/**
- * Validate handler for TFA login form.
- */
-function tfa_code_form_validate($form, &$form_state) {
-  // Validate code.
-  // $tfa = tfa_get_
-  // $tfa->validateForm($form_state);
-  // if (!$tfa->validEntry()) then form_set_error and flood register
-  $code = tfa_get_code($form_state['values']['uid']);
-  if (!empty($code) && $code['code'] != $form_state['values']['code']) {
+function tfa_code_entry_form_validate($form, &$form_state) {
+  $code = $form_state['values']['code'];
+  $account = user_load($form_state['values']['uid']);
+  $tfa = tfa_get_process($account);
+  if (!$tfa->validate($code)) {
     form_set_error('code', t('Invalid code.'));
     // Register failure for purposes of flood control.
-    flood_register_event('tfa_validate');
+    flood_register_event('tfa_validate'); // @todo
   }
 }
 
-/**
- * Submit handler for TFA login form.
- */
-function tfa_code_form_submit($form, &$form_state) {
-  // $tfa = tfa_get_
-  // $tfa->submitForm($form_state);
-  //
-  $uid = $form_state['values']['uid'];
-  $account = user_load($uid);
+function tfa_code_entry_form_submit($form, &$form_state) {
+  $account = user_load($form_state['values']['uid']);
+  $tfa = tfa_get_process($account);
+  $tfa->finalize();
   tfa_login($account);
-}
-
-/**
- * Resend code.
- */
-function tfa_resend_code($form, &$form_state) {
-  $account = user_load($form['uid']['#value']);
-  $code = tfa_generate_code($account);
-  tfa_store_code($account->uid, $code);
-  _tfa_tfa_process($account);
+  $form_state['redirect'] = 'user';
 }
 
 /**
@@ -99,29 +81,37 @@ function tfa_resend_code($form, &$form_state) {
 function tfa_admin_settings() {
   $form = array();
 
-  // Choose communication channel.
-  $channels  = array();
-  $hook = 'tfa_api';
-  foreach (module_implements($hook) as $module) {
-    $function = $module . '_' . $hook;
-    if (function_exists($function)) {
-      $channel = $function();
-      $channels[$module] = $channel;
-      $send_methods[$module] = $channel['title'];
+  // Setup plugins.
+  $send_plugins = $topt_plugins  = array();
+  foreach (module_invoke_all('tfa_api') as $key => $data) {
+    $reflection = new ReflectionClass($class);
+    if ($reflection->isInstance('TfaSendPlugin')) {
+      $send_plugins[$key] = $data['class'];
+    }
+    elseif ($reflection->isInstance('TfaToptPlugin')) {
+      $topt_plugins[$key] = $data['class'];
     }
   }
-  $default_channel = variable_get('tfa_channel', 'sms');
-  $form['tfa_channel'] = array(
-    '#type' => 'select',
-    '#title' => t('Channel'),
-    '#options' => $send_methods,
-    '#default_value' => $default_channel,
-    '#description' => t('Choose the channel to communicate the TFA login code.'),
-  );
+
+  if (!empty($send_plugins)) {
+    $form['tfa_send'] = array(
+      '#type' => 'select',
+      '#title' => t('Send'),
+      '#options' => $send_plugins,
+    );
+  }
+
+  if (!empty($topt_plugins)) {
+    $form['tfa_topt'] = array(
+      '#type' => 'select',
+      '#title' => t('TOPT'),
+      '#options' => $topt_plugins,
+    );
+  }
 
   // If the channel does not define a 'address callback' method default to field.
   // Controlled via Form API #states.
-  $form['tfa_phone_field'] = array(
+  /*$form['tfa_phone_field'] = array(
     '#type' => 'container',
     '#children'  => t('<div class="error messages">A phone field is required for the TFA process. Add a user field for phone number storage to continue. Consult the <a href="!url">help documentation for more info</a>.</div>', array('!url' => url('admin/help/tfa'))),
     '#states' => array(
@@ -162,7 +152,7 @@ function tfa_admin_settings() {
     '#title' => t('Code length'),
     '#default_value' => variable_get('tfa_code_length', 6),
     '#description' => t('Length of the TFA login code.'),
-  );
+  );*/
 
   return system_settings_form($form);
 }

@@ -4,9 +4,26 @@ class Tfa {
 
   protected $plugins = array();
   protected $plugin_info;
+  protected $account;
+  protected $context;
+  protected $plugin;
+  protected $loginPlugin;
+  protected $sendPlugin;
+  protected $validatePlugin;
 
-  public function __construct() {
-    //
+  public function __construct($plugins, array $context = array()) {
+    //$this->instantiatePlugins();
+    //$this->sendPlugin = isset($plugins['send']) ? $plugins['send'] : NULL;
+    $this->validatePlugin = NULL;
+    if (isset($plugins['validate'])) {
+      $this->validatePlugin = new $plugins['validate']($context);
+    }
+    $this->loginPlugin = NULL;
+    if (isset($plugins['login'])) {
+      $this->loginPlugin = new $plugins['login']($context);
+    }
+    //$this->plugin = $plugin;
+    $this->context = $context;
   }
 
   /**
@@ -14,124 +31,104 @@ class Tfa {
    * @return bool [description]
    */
   public function loginAllowed() {
+    if ($this->loginPlugin) {
+      return $this->loginPlugin->loginAllowed();
+    }
   }
 
   /**
    *
    * @return bool [description]
    */
-  public function tfaReady() {
+  public function ready() {
+    return TRUE; // @todo
   }
 
-  public function beginProcess() {
-    // stores context
-  }
-
-  /**
-   *
-   * @return array [description]
-   */
-  public function entryForm() {
-
-  }
-
-  public function validateForm() {
-    // sets validity
-  }
-
-  public function submitForm() {
-    // cleanup
-    // sets redirect?
-  }
-
-  /**
-   *
-   * @return bool [description]
-   */
-  public function validEntry() {
-  }
-
-  /**
-   * Create plugin instances for all plugins and add to the data.
-   * @return array
-   */
-  protected function instantiatePlugins() {
-    $plugins = $this->getPluginInfo();
-    foreach ($plugins as $plugin_name => &$plugin_info) {
-      $plugin_info['plugin'] = new $plugin_info['class']();
+  public function begin() {
+    // Invoke
+    if (method_exists($this->validatePlugin, 'begin')) {
+      $code = $this->validatePlugin->begin();
     }
-
-    return $plugins;
   }
 
-  /**
-   * Searches available classes for ones implementing the
-   * UserAuthValidatePlugin interface and stores them as a ReflectionClass.
-   */
-  protected function getPluginInfo() {
-    // Return plugins array if they have already been collected.
-    if (isset($this->plugin_info)) {
-      return $this->plugin_info;
+  public function validate($code) {
+    // Invoke validate method on plugins
+    return $this->validatePlugin->validate($code);
+  }
+
+  public function finalize() {
+    // Delete code if necessary
+    if (method_exists($this->validatePlugin, 'finalize')) {
+      $this->validatePlugin->finalize();
     }
-
-    // If it's cached, get that and use it.
-    if ($cache = cache_get('tfa_api:plugin_info')) {
-      $this->plugin_info = $cache->data;
-    }
-    // Otherwise, rebuild data.
-    else {
-      $plugins = array();
-      foreach (module_invoke_all('tfa_api') as $key => $class) {
-        // Invoke reflection class to do plugin search.
-        $reflection = new ReflectionClass($class);
-        if ($reflection->implementsInterface('TfaApiPlugin')) {
-          $plugin = $reflection->newInstance();
-          $plugins[$key] = array(
-            'class' => $class,
-            'weight' => $plugin->defaultWeight(),
-          );
-        }
-      }
-
-      // Alter.
-      drupal_alter('tfa_api', $plugins);
-
-      $this->plugin_info = $plugins;
-      // Set this in the cache.
-      cache_set('tfa_api:plugin_info', $plugins);
-    }
-
-    return $this->plugin_info;
   }
 
 }
 
-/**
- * Interface for defining TFA API plugins.
- */
-interface TfaApiPlugin {
+abstract class TfaPlugin {
 
+  protected $code;
+  protected $codeLength;
+  protected $context;
+
+  public function __construct(array $context = array()) {
+    $this->context = $context;
+  }
+
+  public function validate($code) {
+    return $code === $this->code;
+  }
+
+  protected function generate() {
+    $codeLength = 6; // @todo
+    return substr(str_shuffle(str_repeat("123456789abcdefghjkmnpqrstuvwxyz", 5)), 0, $codeLength);
+  }
+
+  protected function encrypt($text) {
+    $key = $this->key;
+
+    $td = mcrypt_module_open('rijndael-128', '', 'ecb', '');
+    $iv = mcrypt_create_iv(mcrypt_enc_get_iv_size($td), MCRYPT_RAND);
+
+    $key = substr($key, 0, mcrypt_enc_get_key_size($td));
+
+    mcrypt_generic_init($td, $key, $iv);
+
+    $data = mcrypt_generic($td, $text);
+
+    mcrypt_generic_deinit($td);
+    mcrypt_module_close($td);
+
+    return $data;
+  }
+
+  protected function decrypt($data) {
+    $key = $this->key;
+
+    $td = mcrypt_module_open('rijndael-128', '', 'ecb', '');
+    $iv = mcrypt_create_iv(mcrypt_enc_get_iv_size($td), MCRYPT_RAND);
+
+    $key = substr($key, 0, mcrypt_enc_get_key_size($td));
+
+    mcrypt_generic_init($td, $key, $iv);
+
+    $text = mdecrypt_generic($td, $data);
+
+    mcrypt_generic_deinit($td);
+    mcrypt_module_close($td);
+
+    return $text;
+  }
+}
+
+interface TfaLoginPlugin {
   public function loginAllowed();
+}
 
-  /**
-   * Main method to decide validation result.
-   */
-  public function validate();
+interface TfaTotpPlugin {
+  public function validate($code);
+}
 
-  /**
-   * This method will be called if validation fails.
-   */
-  public function validateError();
-
-  /**
-   * This method will be called if validation succeeds.
-   */
-  public function validateSuccess();
-
-  /**
-   * The default weight of the plugin. This affects the order it is called
-   * if there are multiple plugins.
-   */
-  public function defaultWeight();
-
+interface TfaSendPlugin {
+  public function begin();
 }

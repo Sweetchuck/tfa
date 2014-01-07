@@ -2,7 +2,7 @@ name = "Two-factor Authentication (TFA)"
 description = Pluggable provider of second factor authentication
 core = 7.x
 
-files[] = tfa.install
-files[] = tfa.module
-files[] = tfa.pages.inc
+files[] = tfa.inc
 files[] = tfa.test
+files[] = tfa_email.inc
+files[] = tfa_deviceauth.inc
