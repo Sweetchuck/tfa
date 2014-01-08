@@ -2,6 +2,8 @@
 
 class Tfa {
 
+  public $hasFallback;
+
   protected $plugins = array();
   protected $plugin_info;
   protected $account;
@@ -10,6 +12,8 @@ class Tfa {
   protected $loginPlugin;
   protected $sendPlugin;
   protected $validatePlugin;
+  protected $fallbackPlugins;
+  protected $complete;
 
   public function __construct($plugins, array $context = array()) {
     //$this->instantiatePlugins();
@@ -22,8 +26,17 @@ class Tfa {
     if (isset($plugins['login'])) {
       $this->loginPlugin = new $plugins['login']($context);
     }
+    $this->hasFallback = FALSE;
+    if (!empty($plugins['fallback'])) {
+      // @todo may not work since submitForm will need to check ready()
+      $this->fallbackPlugins = $plugins['fallback'];
+      $this->hasFallback = TRUE;
+    }
     //$this->plugin = $plugin;
     $this->context = $context;
+    $this->context['plugins'] = $plugins;
+    $this->complete = FALSE;
+
   }
 
   /**
@@ -42,6 +55,52 @@ class Tfa {
    */
   public function ready() {
     return TRUE; // @todo
+  }
+
+  public function getForm() {
+    //dpm(get_class($this->validatePlugin), 'getForm');
+    return $this->validatePlugin->getForm(array());
+  }
+
+  public function submitForm($form_state) {
+    // Handle fallback if set.
+    if ($this->hasFallback && isset($form_state['values']['fallback']) && $form_state['values']['op'] === $form_state['values']['fallback']) {
+      //dpm('issuing fallback');
+      // Change context to next fallback.
+      // @todo check that fallbacks aren't extinguished.
+      $this->context['plugins']['validate'] = array_shift($this->context['plugins']['fallback']);
+    }
+    elseif (method_exists($this->validatePlugin, 'submitForm')) {
+      //dpm('calling plugin submitForm');
+      $this->validatePlugin->submitForm($form_state);
+    }
+    // Check if plugin is complete.
+    $this->complete = $this->validatePlugin->complete();
+  }
+
+  public function getContext() {
+    return $this->context;
+  }
+
+  /**
+   *
+   * @param array $context [description]
+   */
+  /*public function setContext($context) {
+    if (isset($context['validate_plugin'])) {
+      unset($this->validatePlugin);
+      $this->validatePlugin = new $context['validate_plugin']($context);
+      unset($context['validate_plugin']);
+    }
+    $this->context = $context;
+  }*/
+
+  /**
+   *
+   * @return bool [description]
+   */
+  public function processComplete() {
+    return $this->complete;
   }
 
   public function begin() {
@@ -70,13 +129,23 @@ abstract class TfaPlugin {
   protected $code;
   protected $codeLength;
   protected $context;
+  protected $complete;
 
   public function __construct(array $context = array()) {
     $this->context = $context;
+    $this->complete = FALSE;
   }
 
   public function validate($code) {
     return $code === $this->code;
+  }
+
+  public function submitForm($form_state) {
+    $this->complete = TRUE;
+  }
+
+  public function complete() {
+    return $this->complete;
   }
 
   protected function generate() {
@@ -126,9 +195,15 @@ interface TfaLoginPlugin {
 }
 
 interface TfaTotpPlugin {
+  public function getForm($form);
+
   public function validate($code);
 }
 
 interface TfaSendPlugin {
   public function begin();
+
+  public function getForm($form);
+
+  public function validate($code);
 }

@@ -10,7 +10,7 @@
 function tfa_menu() {
   $items['system/tfa/%/%'] = array(
     'title' => 'Two-Factor Authentication',
-    'page callback' => 'tfa_begin',
+    'page callback' => 'tfa_begin_form',
     'page arguments' => array(2, 3),
     'access callback' => 'tfa_entry_access',
     'access arguments' => array(2, 3),
@@ -70,22 +70,45 @@ function tfa_get_settings($account) {
   return FALSE;
 }
 
+function tfa_set_context($account, $context) {
+  //global $user;
+  $_SESSION['tfa'][$account->uid] = $context;
+  $_SESSION['tfa'][$account->uid]['uid'] = $account->uid;
+  // Clear existing static TFA process.
+  drupal_static_reset('tfa_get_process');
+}
 
-function tfa_get_process($account, $context = array()) {
-  // @todo static
-  $plugins = array();
-  if (empty($context)) {
+function tfa_get_context($account) {
+  //global $user;
+  if (isset($_SESSION['tfa'][$account->uid])) {
+    return $_SESSION['tfa'][$account->uid];
+  }
+  else {
     // @todo pull from account/settings
-    $plugins = array(
-      'login' => 'TfaDeviceAuth',
-      'validate' => 'TfaEmail',
+    return array(
+      'uid' => $account->uid,
+      'plugins' => array(
+        'login' => 'TfaDeviceAuth',
+        'validate' => 'TfaTotp',
+        'fallback' => array('TfaEmail', 'TfaRecoveryCode'),
+      ),
     );
   }
-  $context = array(
-    'uid'     => $account->uid,
-    'account' => $account,
-  );
-  $tfa = new Tfa($plugins, $context);
+  return array();
+}
+
+function tfa_get_process($account) {
+  $tfa = &drupal_static(__FUNCTION__);
+  $context = tfa_get_context($account);
+  if (!isset($tfa)) {
+    //dpm('new tfa ' . microtime());
+    $plugins = $context['plugins'];
+    $tfa = new Tfa($plugins, $context);
+  }
+  else {
+    //dpm('static tfa ' . microtime());
+  }
+  //dpm($tfa->getContext(), 'context');
   return $tfa;
 }
 
@@ -97,7 +120,7 @@ function tfa_tfa_api() {
     'tfa_email' => array(
       'class' => 'TfaEmail',
       'name' => 'Email',
-    )
+    ),
   );
 }
 
@@ -194,7 +217,7 @@ function tfa_login($account) {
  */
 function tfa_help($path, $arg) {
   $link = '<p>' . t('<a href="!url">Read the TFA configuration documentation</a> on drupal.org.', array('!url' => url('http://drupal.org/node/1663240'))) . '</p>';
-  switch ($path) {
+  /*switch ($path) {
     case 'admin/help#tfa':
       $output = '';
       $output .= '<h3>' . t('Two-factor Authentication') . '</h3>';
@@ -206,7 +229,7 @@ function tfa_help($path, $arg) {
       $output .= $link;
       $output .= '<p>' . t('Note, unless you choose the "Require TFA process" option users will <strong>only be required to follow the TFA process</strong> if they have an address setup for code delivery.') . '</p>';
       return $output;
-  }
+  }*/
 }
 
 /**

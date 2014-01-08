@@ -4,61 +4,54 @@
  * @file tfa.pages.inc
  */
 
-
-function tfa_begin($uid) {
+function tfa_begin_form($uid) {
   $account = user_load($uid);
 
-  $tfa = tfa_get_process($account);
-  $tfa->begin();
-
-  return drupal_get_form('tfa_code_entry_form', $account->uid);
+  return drupal_get_form('tfa_form', $account);
 }
 
-function tfa_code_entry_form($form, $form_state, $uid) {
+function tfa_form($form, $form_state, $account) {
 
   // Check validation flood.
-  if (!flood_is_allowed('tfa_validate', variable_get('tfa_hourly_threshold', 5))) {
+  /*if (!flood_is_allowed('tfa_validate', variable_get('tfa_hourly_threshold', 5))) {
     drupal_set_message(t('You have reached the threshold for incorrect code entry attempts. Please try again later.'), 'error');
     return drupal_access_denied();
-  }
+  }*/ // @todo
 
-  $form['desc'] = array(
-    '#markup' => t('Enter code to continue.'),
-  );
+  if (empty($form_state['storage']['tfa_context'])) {
+    $tfa = tfa_get_process($account);
+  }
+  else {
+    tfa_set_context($account, $form_state['storage']['tfa_context']);
+    $tfa = tfa_get_process($account);
+  }
+  $tfa->begin();
+  $form = $tfa->getForm();
   $form['uid'] = array(
     '#type' => 'value',
-    '#value' => $uid,
+    '#value' => $account->uid,
   );
-  $form['code'] = array(
-    '#type' => 'textfield',
-    '#title' => t('Code'),
-    '#required' => TRUE,
-  );
-  // Provide option to resend code.
-  /*$form['resend'] = array(
-    '#type' => 'fieldset',
-    '#title' => t('Resend code'),
-    '#collapsible' => TRUE,
-    '#collapsed' => TRUE,
-    '#description' => t('If you have not received the code you may resend it. You can only resend the code !count times per hour.', array('!count' => variable_get('tfa_hourly_threshold', 5))),
-  );
-  $form['resend']['send'] = array(
-    '#type' => 'submit',
-    '#value' => t('Resend code'),
-    '#limit_validation_errors' => array(),
-    '#submit' => array('tfa_resend_code'),
-  );*/
-  $form['login'] = array(
-    '#type' => 'submit',
-    '#value' => t('Submit'),
-  );
+  if ($tfa->hasFallback) {
+    $form['fallback'] = array(
+      '#type' => 'submit',
+      '#value' => t("Can't access your account?"),
+      '#submit' => array('tfa_form_submit'),
+      '#limit_validation_errors' => array(),
+    );
+  }
 
   return $form;
 }
 
-function tfa_code_entry_form_validate($form, &$form_state) {
+function tfa_form_validate($form, &$form_state) {
+  // No validation when issuing fallback.
+  if (isset($form_state['values']['fallback']) && $form_state['values']['op'] === $form_state['values']['fallback']) {
+    return;
+  }
+//  dpm($form_state, 'validate');
   $code = $form_state['values']['code'];
   $account = user_load($form_state['values']['uid']);
+
   $tfa = tfa_get_process($account);
   if (!$tfa->validate($code)) {
     form_set_error('code', t('Invalid code.'));
@@ -67,12 +60,24 @@ function tfa_code_entry_form_validate($form, &$form_state) {
   }
 }
 
-function tfa_code_entry_form_submit($form, &$form_state) {
-  $account = user_load($form_state['values']['uid']);
+function tfa_form_submit($form, &$form_state) {
+  // @todo can form uid value be manipulated??
+  $account = user_load($form['uid']['#value']);
   $tfa = tfa_get_process($account);
-  $tfa->finalize();
-  tfa_login($account);
-  $form_state['redirect'] = 'user';
+  $tfa->submitForm($form_state);
+
+ // dpm($tfa->getContext(), 'submit handler');
+  if (!$tfa->processComplete()) {
+    //drupal_set_message('rebuild');
+    // set TFA context
+    $form_state['storage']['tfa_context'] = $tfa->getContext();
+    $form_state['rebuild'] = TRUE;
+  }
+  else {
+    $tfa->finalize();
+    tfa_login($account);
+    $form_state['redirect'] = 'user';
+  }
 }
 
 /**
@@ -82,30 +87,58 @@ function tfa_admin_settings() {
   $form = array();
 
   // Setup plugins.
-  $send_plugins = $topt_plugins  = array();
+  $send_plugins = $totp_plugins = array();
   foreach (module_invoke_all('tfa_api') as $key => $data) {
-    $reflection = new ReflectionClass($class);
-    if ($reflection->isInstance('TfaSendPlugin')) {
-      $send_plugins[$key] = $data['class'];
+    if (in_array('TfaSendPlugin', class_implements($data['class']))) {
+      $send_plugins[$key] = $data['name'];
     }
-    elseif ($reflection->isInstance('TfaToptPlugin')) {
-      $topt_plugins[$key] = $data['class'];
+    elseif (in_array('TfaTotpPlugin', class_implements($data['class']))) {
+      $totp_plugins[$key] = $data['name'];
     }
   }
 
+
+  $form['configure'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Available plugins'),
+  );
   if (!empty($send_plugins)) {
-    $form['tfa_send'] = array(
+    if (count($send_plugins) > 1) {
+      $form['configure']['tfa_send'] = array(
+        '#type' => 'select',
+        '#title' => t('TFA send plugin'),
+        '#options' => $send_plugins,
+      );
+    }
+    else {
+      $form['configure']['send_none'] = array(
+        '#value' => 'markup',
+        '#markup' => t('No available TFA Send plugins'),
+      );
+    }
+  }
+  if (!empty($totp_plugins)) {
+    if (count($totp_plugins) > 1) {
+      $form['configure']['tfa_totp'] = array(
+        '#type' => 'select',
+        '#title' => t('TOTP plugin'),
+        '#options' => $totp_plugins,
+      );
+    }
+    else {
+      $form['configure']['totp_none'] = array(
+        '#value' => 'markup',
+        '#markup' => t('No available TFA TOTP plugins'),
+      );
+    }
+  }
+
+
+  if (count($validate_plugins) > 1) {
+    $form['tfa_fallback'] = array(
       '#type' => 'select',
       '#title' => t('Send'),
       '#options' => $send_plugins,
-    );
-  }
-
-  if (!empty($topt_plugins)) {
-    $form['tfa_topt'] = array(
-      '#type' => 'select',
-      '#title' => t('TOPT'),
-      '#options' => $topt_plugins,
     );
   }
 

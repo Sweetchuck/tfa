@@ -39,7 +39,7 @@ function tfa_schema() {
  */
 function tfa_uninstall() {
   variable_del('tfa_send');
-  variable_del('tfa_topt');
+  variable_del('tfa_totp');
 
   variable_del('tfa_hourly_threshold');
   variable_del('tfa_send_message');
