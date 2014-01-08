@@ -1,13 +1,12 @@
 <?php
 
-class TfaEmail extends TfaPlugin implements TfaSendPlugin {
+class TfaTestSend extends TfaPlugin implements TfaSendPlugin {
 
   public function getForm($form) {
     $form['code'] = array(
       '#type' => 'textfield',
-      '#title' => t('Verification Code'),
+      '#title' => t('Enter sent code'),
       '#required' => TRUE,
-      '#description' => t('Enter @length-character code sent to your device.', array('@length' => $this->codeLength)),
     );
     $form['login'] = array(
       '#type' => 'submit',
@@ -54,12 +53,6 @@ class TfaEmail extends TfaPlugin implements TfaSendPlugin {
   }
 
   protected function send($code) {
-    /*$params = array(
-      'code' => $code,
-      'message' => $message,
-    );
-    $from = variable_get('site_mail', 'admin@example.com');*/
-    //$result = drupal_mail('email_tfa', 'tfa_send', $account->mail, user_preferred_language($account), $params, $from, TRUE);
-    watchdog('tst', 'tfa send: ' . $code);
+    // Do nothing.
   }
 }

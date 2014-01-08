@@ -87,16 +87,28 @@ function tfa_admin_settings() {
   $form = array();
 
   // Setup plugins.
-  $send_plugins = $totp_plugins = array();
+  $plugins = $send_plugins = $totp_plugins = $login_plugins = array();
+
   foreach (module_invoke_all('tfa_api') as $key => $data) {
+    dpm($data, $key);
     if (in_array('TfaSendPlugin', class_implements($data['class']))) {
       $send_plugins[$key] = $data['name'];
+      $plugins[$key] = $data['name'];
     }
     elseif (in_array('TfaTotpPlugin', class_implements($data['class']))) {
       $totp_plugins[$key] = $data['name'];
     }
+    elseif (in_array('TfaLoginPlugin', class_implements($data['class']))) {
+      $login_plugins[$key] = $data['name'];
+    }
+    elseif (is_subclass_of($data['class'], 'TfaPlugin')) {
+      $plugins[$key] = $data['name'];
+    }
   }
 
+  variable_set('tfa_login_plugin', 'TfaDeviceAuth');
+  variable_set('tfa_validate_plugin', 'TfaTotp');
+  variable_set('tfa_fallback_plugins', array('TfaEmail', 'TfaRecoveryCode'));
 
   $form['configure'] = array(
     '#type' => 'fieldset',
@@ -134,11 +146,11 @@ function tfa_admin_settings() {
   }
 
 
-  if (count($validate_plugins) > 1) {
+  if (count($plugins) >= 1) {
     $form['tfa_fallback'] = array(
-      '#type' => 'select',
-      '#title' => t('Send'),
-      '#options' => $send_plugins,
+      '#type' => 'checkboxes',
+      '#title' => t('Fallback'),
+      '#options' => $plugins,
     );
   }
 

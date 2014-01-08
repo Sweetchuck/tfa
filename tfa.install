@@ -16,7 +16,7 @@ function tfa_schema() {
         'not null' => TRUE,
         'default' => 0,
       ),
-      'type' => array(
+      'plugin' => array(
         'type' => 'varchar',
         'length' => 32,
         'not null' => TRUE,

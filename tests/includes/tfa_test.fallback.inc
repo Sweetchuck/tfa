@@ -1,13 +1,12 @@
 <?php
 
-class TfaRecoveryCode extends TfaPlugin {
+class TfaTestFallback extends TfaPlugin {
 
   public function getForm($form) {
     $form['recover'] = array(
       '#type' => 'textfield',
-      '#title' => t('Enter one of your recovery codes'),
+      '#title' => t('Code'),
       '#required' => TRUE,
-      '#description' => t('These recovery codes were generated when you first setup TFA.'),
     );
     $form['login'] = array(
       '#type' => 'submit',

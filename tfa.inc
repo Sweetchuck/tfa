@@ -1,5 +1,12 @@
 <?php
 
+/**
+ * @file TFA module classes
+ */
+
+/**
+ * Class Tfa
+ */
 class Tfa {
 
   public $hasFallback;
@@ -15,15 +22,18 @@ class Tfa {
   protected $fallbackPlugins;
   protected $complete;
 
+  /**
+   * [__construct description]
+   * @param [type] $plugins [description]
+   * @param array  $context [description]
+   */
   public function __construct($plugins, array $context = array()) {
-    //$this->instantiatePlugins();
-    //$this->sendPlugin = isset($plugins['send']) ? $plugins['send'] : NULL;
     $this->validatePlugin = NULL;
-    if (isset($plugins['validate'])) {
+    if (!empty($plugins['validate'])) {
       $this->validatePlugin = new $plugins['validate']($context);
     }
     $this->loginPlugin = NULL;
-    if (isset($plugins['login'])) {
+    if (!empty($plugins['login'])) {
       $this->loginPlugin = new $plugins['login']($context);
     }
     $this->hasFallback = FALSE;
@@ -57,11 +67,20 @@ class Tfa {
     return TRUE; // @todo
   }
 
+  /**
+   * [getForm description]
+   * @return [type] [description]
+   */
   public function getForm() {
     //dpm(get_class($this->validatePlugin), 'getForm');
     return $this->validatePlugin->getForm(array());
   }
 
+  /**
+   * [submitForm description]
+   * @param  [type] $form_state [description]
+   * @return [type]             [description]
+   */
   public function submitForm($form_state) {
     // Handle fallback if set.
     if ($this->hasFallback && isset($form_state['values']['fallback']) && $form_state['values']['op'] === $form_state['values']['fallback']) {
@@ -78,22 +97,14 @@ class Tfa {
     $this->complete = $this->validatePlugin->complete();
   }
 
+  /**
+   * Return TFA context.
+   *
+   * @return array
+   */
   public function getContext() {
     return $this->context;
   }
-
-  /**
-   *
-   * @param array $context [description]
-   */
-  /*public function setContext($context) {
-    if (isset($context['validate_plugin'])) {
-      unset($this->validatePlugin);
-      $this->validatePlugin = new $context['validate_plugin']($context);
-      unset($context['validate_plugin']);
-    }
-    $this->context = $context;
-  }*/
 
   /**
    *
@@ -103,6 +114,10 @@ class Tfa {
     return $this->complete;
   }
 
+  /**
+   * [begin description]
+   * @return [type] [description]
+   */
   public function begin() {
     // Invoke
     if (method_exists($this->validatePlugin, 'begin')) {
@@ -110,11 +125,20 @@ class Tfa {
     }
   }
 
+  /**
+   * [validate description]
+   * @param  [type] $code [description]
+   * @return [type]       [description]
+   */
   public function validate($code) {
     // Invoke validate method on plugins
     return $this->validatePlugin->validate($code);
   }
 
+  /**
+   * [finalize description]
+   * @return [type] [description]
+   */
   public function finalize() {
     // Delete code if necessary
     if (method_exists($this->validatePlugin, 'finalize')) {
@@ -124,6 +148,9 @@ class Tfa {
 
 }
 
+/**
+ *
+ */
 abstract class TfaPlugin {
 
   protected $code;
@@ -131,28 +158,55 @@ abstract class TfaPlugin {
   protected $context;
   protected $complete;
 
+  /**
+   * [__construct description]
+   * @param array $context [description]
+   */
   public function __construct(array $context = array()) {
     $this->context = $context;
     $this->complete = FALSE;
+    $this->codeLength = 6; // @todo
   }
 
+  /**
+   * [validate description]
+   * @param  [type] $code [description]
+   * @return [type]       [description]
+   */
   public function validate($code) {
-    return $code === $this->code;
+    return (string) $code === (string) $this->code;
   }
 
+  /**
+   * [submitForm description]
+   * @param  [type] $form_state [description]
+   * @return [type]             [description]
+   */
   public function submitForm($form_state) {
     $this->complete = TRUE;
   }
 
+  /**
+   * [complete description]
+   * @return [type] [description]
+   */
   public function complete() {
     return $this->complete;
   }
 
+  /**
+   * [generate description]
+   * @return [type] [description]
+   */
   protected function generate() {
-    $codeLength = 6; // @todo
-    return substr(str_shuffle(str_repeat("123456789abcdefghjkmnpqrstuvwxyz", 5)), 0, $codeLength);
+    return substr(str_shuffle(str_repeat("123456789abcdefghjkmnpqrstuvwxyz", 5)), 0, $this->codeLength);
   }
 
+  /**
+   * [encrypt description]
+   * @param  [type] $text [description]
+   * @return [type]       [description]
+   */
   protected function encrypt($text) {
     $key = $this->key;
 
@@ -171,6 +225,11 @@ abstract class TfaPlugin {
     return $data;
   }
 
+  /**
+   * [decrypt description]
+   * @param  [type] $data [description]
+   * @return [type]       [description]
+   */
   protected function decrypt($data) {
     $key = $this->key;
 
@@ -190,20 +249,60 @@ abstract class TfaPlugin {
   }
 }
 
+/**
+ *
+ */
 interface TfaLoginPlugin {
+
+  /**
+   * [loginAllowed description]
+   * @return [type] [description]
+   */
   public function loginAllowed();
 }
 
+/**
+ *
+ */
 interface TfaTotpPlugin {
+
+  /**
+   * [getForm description]
+   * @param  [type] $form [description]
+   * @return [type]       [description]
+   */
   public function getForm($form);
 
+  /**
+   * [validate description]
+   * @param  [type] $code [description]
+   * @return [type]       [description]
+   */
   public function validate($code);
 }
 
+/**
+ *
+ */
 interface TfaSendPlugin {
+
+  /**
+   * [begin description]
+   * @return [type] [description]
+   */
   public function begin();
 
+  /**
+   * [getForm description]
+   * @param  [type] $form [description]
+   * @return [type]       [description]
+   */
   public function getForm($form);
 
+  /**
+   * [validate description]
+   * @param  [type] $code [description]
+   * @return [type]       [description]
+   */
   public function validate($code);
 }

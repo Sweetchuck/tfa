@@ -3,7 +3,8 @@ description = Pluggable provider of second factor authentication
 core = 7.x
 
 files[] = tfa.inc
-files[] = tfa.test
+files[] = tests/tfa.test
+
 files[] = tfa_email.inc
 files[] = tfa_deviceauth.inc
 files[] = tfa_recoverycode.inc

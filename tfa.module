@@ -36,7 +36,8 @@ function tfa_entry_access($uid, $check_hash) {
   $account = user_load($uid);
   $hash = tfa_login_hash($account);
   // Hash must be valid and the code must have been created within the day.
-  return ($hash == $check_hash);// @todo && !empty($code) && ($code['created'] > REQUEST_TIME - 86400);
+  // @todo get something from context
+  return ($hash === $check_hash);// && !empty($code) && ($code['created'] > REQUEST_TIME - 86400);
 }
 
 /**
@@ -57,19 +58,35 @@ function tfa_permission() {
 }
 
 /**
- * Get account's TFA settings.
+ * Get account's TFA plugin.
  *
  * @param  $account
- * @return array with keys: type, created, codedata, accepted
+ * @return string
+ *   Class of TfaPlugin
  */
-function tfa_get_settings($account) {
-  $result = db_query("SELECT type, created, codedata, accepted FROM {tfa} WHERE uid = :uid", array(':uid' => $account->uid))->fetchAssoc();
+function tfa_get_plugin($account) {
+  $result = db_query("SELECT plugin FROM {tfa} WHERE uid = :uid", array(':uid' => $account->uid))->fetchAssoc();
   if (!empty($result)) {
     return $result;
   }
   return FALSE;
 }
 
+function tfa_get_active_plugins() {
+  // @todo.
+  return array(
+    'login' => variable_get('tfa_login_plugin', ''),
+    'validate' => variable_get('tfa_validate_plugin', ''),
+    'fallback' => variable_get('tfa_fallback_plugins', array()),
+  );
+}
+
+/**
+ * Set context for account's TFA process.
+ * @param $account User account
+ * @param array $context Context array
+ *   @see tfa_get_context for format
+ */
 function tfa_set_context($account, $context) {
   //global $user;
   $_SESSION['tfa'][$account->uid] = $context;
@@ -78,21 +95,35 @@ function tfa_set_context($account, $context) {
   drupal_static_reset('tfa_get_process');
 }
 
+/**
+ * Context for account TFA process.
+ * @param $account User account
+ * @return array
+ *   array(
+ *     'uid' => 9,
+ *     'plugins' => array(
+ *       'login' => 'TfaLoginPlugin',
+ *       'validate' => 'TfaSendPlugin',
+ *       'fallback' => array('TfaRecoveryCode'),
+ *     ),
+ */
 function tfa_get_context($account) {
   //global $user;
   if (isset($_SESSION['tfa'][$account->uid])) {
     return $_SESSION['tfa'][$account->uid];
   }
   else {
-    // @todo pull from account/settings
-    return array(
-      'uid' => $account->uid,
-      'plugins' => array(
-        'login' => 'TfaDeviceAuth',
-        'validate' => 'TfaTotp',
-        'fallback' => array('TfaEmail', 'TfaRecoveryCode'),
-      ),
-    );
+    $context = array('uid' => $account->uid, 'plugins' => array());
+    // @todo check if account's can set their own plugin
+    $plugin = tfa_get_plugin($account);
+    foreach (module_invoke_all('tfa_api') as $key => $data) {
+      if ($plugin === $key) {
+        $context['plugins']['validate'] = $data['class'];
+      }
+    }
+    // Add system plugins.
+    $context['plugins'] = array_merge(tfa_get_active_plugins(), $context['plugins']);
+    return $context;
   }
   return array();
 }
@@ -116,20 +147,39 @@ function tfa_get_process($account) {
  * Implements hook_tfa_api() for itself.
  */
 function tfa_tfa_api() {
+  // @todo remove or put in submodule.
   return array(
     'tfa_email' => array(
       'class' => 'TfaEmail',
       'name' => 'Email',
     ),
+    'tfa_deviceauth' => array(
+      'class' => 'TfaDeviceAuth',
+      'name' => 'Remember device',
+    ),
+    'tfa_totp' => array(
+      'class' => 'TfaTotp',
+      'name' => 'TOTP',
+    ),
+    'tfa_recovercode' => array(
+      'class' => 'TfaRecoveryCode',
+      'name' => 'Recovery codes',
+    ),
   );
 }
 
+/**
+ * Check if login should be interrupted for authenticating account.
+ *
+ * @param $account User account
+ * @return bool
+ */
 function tfa_login_allowed($account) {
   // TFA master login allowed switch is set by tfa_login().
   if (isset($_SESSION['tfa'][$account->uid]['login']) && $_SESSION['tfa'][$account->uid]['login'] === TRUE) {
     return TRUE;
   }
-  // Check if TfaLoginPlugins will allow login.
+  // Check if login plugins will allow login.
   $tfa = tfa_get_process($account);
   return $tfa->loginAllowed() === TRUE;
 }
@@ -141,17 +191,11 @@ function tfa_user_login(&$edit, $account) {
   global $user;
 
   $tfa = tfa_get_process($account);
-  // if (!$tfa->loginAllowed($account) then tfa_logout()
-  // elseif ($tfa->beginTfa($account))
-  //   redirect to tfa callback
-
-  //if (variable_get('tfa_required', 0) && !user_access('skip tfa', $account) && !tfa_ready($account)) {
   if (variable_get('tfa_required', 0) && !user_access('skip tfa', $account) && !$tfa->ready()) {
     tfa_logout();
     drupal_set_message(t('Login disallowed till your account is setup for TFA. Contact a site administrator.'), 'error');
     drupal_goto('user');
   }
-  //elseif (!user_access('skip tfa', $account) && tfa_ready($account)) {
   elseif (!user_access('skip tfa', $account) && !tfa_login_allowed($account)) {
     // Log out user and restart flood events.
     tfa_logout();
@@ -171,7 +215,7 @@ function tfa_user_login(&$edit, $account) {
 }
 
 /**
- * Log out the user. Similar to user_logout() but doesn't redirect.
+ * Unathenticate the user. Similar to user_logout() but doesn't redirect.
  */
 function tfa_logout() {
   global $user;
@@ -202,7 +246,7 @@ function tfa_login($account) {
   // Regenerate the session ID to prevent against session fixation attacks.
   drupal_session_regenerate();
 
-  // Set authenticated context.
+  // Set master authenticated context.
   $_SESSION['tfa'][$user->uid]['login'] = TRUE;
 
   // Truncate flood for user.
@@ -233,96 +277,13 @@ function tfa_help($path, $arg) {
 }
 
 /**
- * Generate a hash for this account for the TFA login form.
+ * Generate account hash to access the TFA form.
  *
  * @param object $account User account.
  * @return string Random hash.
  */
 function tfa_login_hash($account) {
   $data = implode(':', array($account->name, $account->pass, $account->login));
+  // @todo include something from context
   return drupal_hash_base64($data);
-}
-
-/**
- * Generate the code for TFA.
- *
- * @param object $account User account.
- * @return string Random code or "nonce".
- */
-function tfa_generate_code($account) {
-  $code_length = variable_get('tfa_code_length', 6);
-  // Generate a randomized string of characters.
-  $code = substr(str_shuffle(str_repeat("123456789abcdefghjkmnpqrstuvwxyz", 5)), 0, $code_length);
-  return $code;
-}
-
-/**
- * Send the code to the user.
- *
- * @param object $account User account.
- * @return bool True or False if the code was sent on the secondary channel.
- */
-function tfa_send_code($account) {
-  $entry = tfa_get_code($account->uid);
-  $code = $entry['code']; // Actual code is element 'code'.
-  $message = check_plain(variable_get('tfa_send_message', 'Login code'));
-
-  // Variable send method, defaults to TFA method using SMS Framework.
-  $module = variable_get('tfa_channel', 'sms');
-  $function = $module . '_tfa_api';
-  if (!empty($module) && function_exists($function)) {
-    $channel = $function();
-    $function = $channel['send callback'];
-    $result = $function($account, $code, $message);
-    return $result;
-  }
-  return FALSE;
-}
-
-/**
- * Store the code for state control
- *
- * @param int $uid UID of account.
- * @param string $code Code to store.
- * @return SAVED_NEW, SAVED_UPDATED or False.
- */
-function tfa_store_code($uid, $code) {
-  $previous_code = tfa_get_code($uid);
-  $record = array(
-    'uid' => $uid,
-    'code' => $code,
-    'accepted' => 0,
-    'created' => REQUEST_TIME,
-  );
-  if (empty($previous_code)) {
-    return drupal_write_record('tfa', $record);
-  }
-  else {
-    return drupal_write_record('tfa', $record, array('uid'));
-  }
-}
-
-/**
- * Mark a code as accepted.
- *
- * @param int $uid UID of account.
- */
-function tfa_accept_code($uid) {
-  db_update('tfa')
-  ->fields(array(
-    'accepted' => 1,
-  ))
-  ->condition('uid', $uid)
-  ->execute();
-}
-
-/**
- * Delete a code for a user.
- *
- * @param int $uid UID of account.
- */
-function tfa_delete_code($uid) {
-  db_delete('tfa')
-  ->condition('uid', $uid)
-  ->execute();
 }
