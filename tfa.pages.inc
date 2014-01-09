@@ -101,7 +101,29 @@ function tfa_form_submit($form, &$form_state) {
     // TFA process is complete so finalize and authenticate user.
     $tfa->finalize();
     tfa_login($account);
-    $form_state['redirect'] = 'user'; // @todo handle prior destination
+
+    // Handle destination and query parameters.
+    $query = drupal_get_query_parameters();
+    if (!empty($query['pass-reset-token'])) {
+      // If pass-reset-token was set then complete final process interrupted
+      // from user_pass_reset().
+      watchdog('tfa', 'User %name used one-time login link', array('%name' => $account->name));
+      drupal_set_message(t('You have just used your one-time login link. It is no longer necessary to use this link to log in. Please change your password.'));
+      // Let the user's password be changed without the current password check.
+      $token = drupal_random_key();
+      $_SESSION['pass_reset_' . $account->uid] = $token;
+      $query['pass-reset-token'] = $token;
+    }
+    $destination = !empty($form_state['redirect']) ? $form_state['redirect'] : 'node';
+    if (!empty($query['destination'])) {
+      $destination = $query['destination'];
+      unset($query['destination']);
+      unset($_GET['destination']);
+    }
+    $form_state['redirect'] = array(
+      $destination,
+      array('query' => $query),
+    );
   }
 }
 

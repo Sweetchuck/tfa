@@ -36,6 +36,8 @@ class TfaTestCase extends DrupalWebTestCase {
       'pass' => $account->pass_raw,
     );
     $this->drupalPost('user', $edit, t('Log in'));
+    // Get login hash. Could user tfa_login_hash() but would require reloading
+    // account.
     $url_parts = explode('/', $this->url);
     $login_hash = array_pop($url_parts);
 
@@ -59,7 +61,6 @@ class TfaTestCase extends DrupalWebTestCase {
     );
     $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, t('Submit'));
     $this->assertText('My account', 'Authenticated text appears');
-    $this->assertText($account->name, 'Username appears');
 
     $this->drupalGet('user/logout');
 
@@ -96,7 +97,6 @@ class TfaTestCase extends DrupalWebTestCase {
     );
     $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, t('Submit'));
     $this->assertText('My account', 'Authenticated text appears');
-    $this->assertText($account->name, 'Username appears');
   }
 
   public function testFloodControl() {
@@ -129,6 +129,43 @@ class TfaTestCase extends DrupalWebTestCase {
     $this->assertText($this->uiStrings('flood-validate'), 'The validation flood text appears');
   }
 
+  public function testRedirection() {
+    // Enable test plugin.
+    variable_set('tfa_validate_plugin', 'TfaTestSend');
+    $code = $this->randomName();
+    variable_set('tfa_test_code', $code);
+
+    $account = $this->drupalCreateUser(array());
+
+    $edit = array(
+      'name' => $account->name,
+      'pass' => $account->pass_raw,
+    );
+    // Set destination to filter tips page.
+    $options = array('query' => array('destination' => 'filter/tips'));
+    $this->drupalPost('user/login', $edit, t('Log in'), $options);
+    // Reload account since login timestamp is updated.
+    $account = user_load($account->uid);
+    $login_hash = tfa_login_hash($account);
+
+    // Authenticate with code.
+    $edit = array(
+      'code' => $code,
+    );
+    $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, t('Submit'), $options);
+    $this->assertText('My account', 'Authenticated text appears');
+    // Confirm user is on filter tips page.
+    $this->assertText('Compose tips', 'Redirected page text appears');
+
+    // @todo test one-time login redirection.
+  }
+
+  /**
+   * TFA module user interface strings.
+   *
+   * @param string Identifying string
+   * @return string
+   */
   protected function uiStrings($id) {
     switch ($id) {
       case 'fallback-button':

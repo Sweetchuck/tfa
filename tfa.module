@@ -204,7 +204,9 @@ function tfa_user_login(&$edit, $account) {
     // Hold onto destination and unset GET parameter. @todo put into context?
     $query = drupal_get_query_parameters();
     if (arg(0) == 'user' && arg(1) == 'reset') {
-      $query = array('destination' => 'user/' . $account->uid . '/edit');
+      // If one-time login reset destination and hold onto token.
+      $query['destination'] = 'user/' . $account->uid . '/edit';
+      $query['pass-reset-token'] = arg(4);
     }
     unset($_GET['destination']);
     drupal_goto('system/tfa/' . $account->uid . '/' . $login_hash, array('query' => $query));
@@ -243,6 +245,7 @@ function tfa_login($account) {
   // Regenerate the session ID to prevent against session fixation attacks.
   drupal_session_regenerate();
 
+  watchdog('tfa', 'Session opened for %name.', array('%name' => $user->name));
   // Set master authenticated context.
   $_SESSION['tfa'][$user->uid]['login'] = TRUE;
 
