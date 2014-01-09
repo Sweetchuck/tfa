@@ -1,6 +1,11 @@
 <?php
 
-class TfaTestSend extends TfaPlugin implements TfaSendPlugin {
+class TfaTestSend extends TfaBasePlugin implements TfaValidationPlugin, TfaSendPlugin {
+
+  public function __construct(array $context = array()) {
+    parent::__construct($context);
+    $this->code = variable_get('tfa_test_code', 'TEST');
+  }
 
   public function getForm($form) {
     $form['code'] = array(
@@ -10,7 +15,7 @@ class TfaTestSend extends TfaPlugin implements TfaSendPlugin {
     );
     $form['login'] = array(
       '#type' => 'submit',
-      '#value' => t('Verify'),
+      '#value' => t('Submit'),
     );
     $form['resend'] = array(
       '#type' => 'submit',
@@ -22,37 +27,26 @@ class TfaTestSend extends TfaPlugin implements TfaSendPlugin {
     return $form;
   }
 
+  public function validateForm(&$form_state) {
+    if (!parent::validate($form_state['values']['code'])) {
+      $this->errorMessages['code'] = t('Invalid sent code');
+      return FALSE;
+    }
+    else {
+      return TRUE;
+    }
+  }
+
   public function submitForm($form_state) {
-    // Resend code if pushed.
     if ($form_state['values']['op'] === $form_state['values']['resend']) {
       drupal_set_message('Code resent');
-      $code = $this->generate();
-      $this->send($code);
     }
     else {
       parent::submitForm($form_state);
     }
   }
 
-  public function begin() {
-    $code = $this->generate();
-    $this->send($code);
-  }
-
-  public function validate($code) {
-    $this->code = variable_get('tfa_test', '3lk2jf3');
-    return parent::validate($code);
-  }
-
-  protected function generate() {
-    $code = parent::generate();
-    // store code
-    //variable_set('tfa_test', $code);
-    $code = variable_get('tfa_test', '3lk2jf3');
-    return $code;
-  }
-
-  protected function send($code) {
+  public function send() {
     // Do nothing.
   }
 }

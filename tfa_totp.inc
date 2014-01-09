@@ -1,6 +1,6 @@
 <?php
 
-class TfaTotp extends TfaPlugin implements TfaTotpPlugin {
+class TfaTotp extends TfaBasePlugin implements TfaValidationPlugin {
 
   public function getForm($form) {
     $form['code'] = array(
@@ -17,8 +17,14 @@ class TfaTotp extends TfaPlugin implements TfaTotpPlugin {
     return $form;
   }
 
-  public function validate($code) {
+  public function validateForm(&$form_state) {
     $this->code = variable_get('tfa_totp', 123456);
-    return parent::validate($code);
+    if (!parent::validate($form_state['values']['code'])) {
+      $this->errorMessages['code'] = t('Invalid application code.');
+      return FALSE;
+    }
+    else {
+      return TRUE;
+    }
   }
 }

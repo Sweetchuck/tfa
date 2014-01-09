@@ -72,8 +72,12 @@ function tfa_get_plugin($account) {
   return FALSE;
 }
 
+/**
+ * Get systems active plugins.
+ *
+ * @return array
+ */
 function tfa_get_active_plugins() {
-  // @todo.
   return array(
     'login' => variable_get('tfa_login_plugin', ''),
     'validate' => variable_get('tfa_validate_plugin', ''),
@@ -88,7 +92,6 @@ function tfa_get_active_plugins() {
  *   @see tfa_get_context for format
  */
 function tfa_set_context($account, $context) {
-  //global $user;
   $_SESSION['tfa'][$account->uid] = $context;
   $_SESSION['tfa'][$account->uid]['uid'] = $account->uid;
   // Clear existing static TFA process.
@@ -108,7 +111,6 @@ function tfa_set_context($account, $context) {
  *     ),
  */
 function tfa_get_context($account) {
-  //global $user;
   if (isset($_SESSION['tfa'][$account->uid])) {
     return $_SESSION['tfa'][$account->uid];
   }
@@ -130,16 +132,11 @@ function tfa_get_context($account) {
 
 function tfa_get_process($account) {
   $tfa = &drupal_static(__FUNCTION__);
-  $context = tfa_get_context($account);
   if (!isset($tfa)) {
-    //dpm('new tfa ' . microtime());
+    $context = tfa_get_context($account);
     $plugins = $context['plugins'];
     $tfa = new Tfa($plugins, $context);
   }
-  else {
-    //dpm('static tfa ' . microtime());
-  }
-  //dpm($tfa->getContext(), 'context');
   return $tfa;
 }
 
@@ -147,7 +144,7 @@ function tfa_get_process($account) {
  * Implements hook_tfa_api() for itself.
  */
 function tfa_tfa_api() {
-  // @todo remove or put in submodule.
+  // @todo here for testing
   return array(
     'tfa_email' => array(
       'class' => 'TfaEmail',
@@ -204,7 +201,7 @@ function tfa_user_login(&$edit, $account) {
 
     $login_hash = tfa_login_hash($account);
 
-    // Hold onto destination and unset GET parameter.
+    // Hold onto destination and unset GET parameter. @todo put into context?
     $query = drupal_get_query_parameters();
     if (arg(0) == 'user' && arg(1) == 'reset') {
       $query = array('destination' => 'user/' . $account->uid . '/edit');
@@ -261,6 +258,7 @@ function tfa_login($account) {
  */
 function tfa_help($path, $arg) {
   $link = '<p>' . t('<a href="!url">Read the TFA configuration documentation</a> on drupal.org.', array('!url' => url('http://drupal.org/node/1663240'))) . '</p>';
+  // @todo out of date
   /*switch ($path) {
     case 'admin/help#tfa':
       $output = '';

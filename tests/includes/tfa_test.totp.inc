@@ -1,23 +1,29 @@
 <?php
 
-class TfaTestTotp extends TfaPlugin implements TfaTotpPlugin {
+class TfaTestTotp extends TfaBasePlugin implements TfaValidationPlugin {
 
   public function getForm($form) {
     $form['code'] = array(
       '#type' => 'textfield',
-      '#title' => t('Code'),
+      '#title' => t('TOTP code'),
       '#required' => TRUE,
     );
     $form['login'] = array(
       '#type' => 'submit',
-      '#value' => t('Verify'),
+      '#value' => t('Submit'),
     );
 
     return $form;
   }
 
-  public function validate($code) {
-    $this->code = variable_get('tfa_totp', 123456);
-    return parent::validate($code);
-  }
+  public function validateForm(&$form_state) {
+      $this->code = variable_get('tfa_totp', 123456);
+      if (!parent::validate($form_state['values']['code'])) {
+        $this->errorMessages['code'] = t('Invalid TOTP code');
+        return FALSE;
+      }
+      else {
+        return TRUE;
+      }
+    }
 }

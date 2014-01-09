@@ -1,6 +1,6 @@
 <?php
 
-class TfaTestLogin extends TfaPlugin implements TfaLoginPlugin {
+class TfaTestLogin extends TfaBasePlugin implements TfaLoginPlugin {
 
   public function loginAllowed() {
     if ($this->context['uid'] === '141') {

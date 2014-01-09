@@ -23,7 +23,8 @@ class Tfa {
   protected $complete;
 
   /**
-   * [__construct description]
+   * TFA constructor.
+   *
    * @param [type] $plugins [description]
    * @param array  $context [description]
    */
@@ -50,8 +51,9 @@ class Tfa {
   }
 
   /**
+   * Whether authentication should be interrupted.
    *
-   * @return bool [description]
+   * @return bool
    */
   public function loginAllowed() {
     if ($this->loginPlugin) {
@@ -60,20 +62,40 @@ class Tfa {
   }
 
   /**
+   * Determine if TFA process is ready.
    *
-   * @return bool [description]
+   * @return bool Whether process can begin or not.
    */
   public function ready() {
-    return TRUE; // @todo
+    return TRUE; // @todo invoke plugin ready
   }
 
   /**
-   * [getForm description]
-   * @return [type] [description]
+   * Get TFA process form from plugin.
+   *
+   * @return array Form API array.
    */
   public function getForm() {
-    //dpm(get_class($this->validatePlugin), 'getForm');
     return $this->validatePlugin->getForm(array());
+  }
+
+  /**
+   * Validate form.
+   *
+   * @param array $code
+   * @return bool
+   */
+  public function validateForm(&$form_state) {
+    return $this->validatePlugin->validateForm($form_state);
+  }
+
+  /**
+   * Return process error messages.
+   *
+   * @return array
+   */
+  public function getErrorMessages() {
+    return $this->validatePlugin->getErrorMessages();
   }
 
   /**
@@ -81,7 +103,7 @@ class Tfa {
    * @param  [type] $form_state [description]
    * @return [type]             [description]
    */
-  public function submitForm($form_state) {
+  public function submitForm(&$form_state) {
     // Handle fallback if set.
     if ($this->hasFallback && isset($form_state['values']['fallback']) && $form_state['values']['op'] === $form_state['values']['fallback']) {
       //dpm('issuing fallback');
@@ -119,20 +141,17 @@ class Tfa {
    * @return [type] [description]
    */
   public function begin() {
-    // Invoke
-    if (method_exists($this->validatePlugin, 'begin')) {
-      $code = $this->validatePlugin->begin();
+    if (method_exists($this->validatePlugin, 'send')) {
+      $code = $this->validatePlugin->send();
     }
   }
 
   /**
-   * [validate description]
-   * @param  [type] $code [description]
-   * @return [type]       [description]
+   * [valid description]
+   * @return [type] [description]
    */
-  public function validate($code) {
-    // Invoke validate method on plugins
-    return $this->validatePlugin->validate($code);
+  public function valid() {
+    return $this->validatePlugin->valid();
   }
 
   /**
@@ -149,49 +168,82 @@ class Tfa {
 }
 
 /**
- *
+ * Base plugin class.
  */
-abstract class TfaPlugin {
+abstract class TfaBasePlugin {
 
   protected $code;
   protected $codeLength;
   protected $context;
   protected $complete;
+  protected $valid;
+  protected $errorMessages;
 
   /**
-   * [__construct description]
+   * Plugin constructor.
+   *
    * @param array $context [description]
    */
   public function __construct(array $context = array()) {
     $this->context = $context;
-    $this->complete = FALSE;
     $this->codeLength = 6; // @todo
+    $this->complete = FALSE;
+    $this->valid = FALSE;
+    $this->errorMessages = array();
   }
 
   /**
-   * [validate description]
-   * @param  [type] $code [description]
-   * @return [type]       [description]
+   * Get error messages in format usable by form_set_error().
+   *
+   * @return array
    */
-  public function validate($code) {
-    return (string) $code === (string) $this->code;
+  public function getErrorMessages() {
+    return $this->errorMessages;
   }
 
   /**
-   * [submitForm description]
-   * @param  [type] $form_state [description]
-   * @return [type]             [description]
+   * Submit form.
+   *
+   * @param array $form_state
+   * @return bool Whether form passes validation or not
    */
   public function submitForm($form_state) {
     $this->complete = TRUE;
   }
 
   /**
-   * [complete description]
+   * Whether the plugin's code processing is valid.
+   *
+   * @param  [type] $code [description]
+   * @return [type]       [description]
+   */
+  public function valid() {
+    return $this->valid;
+  }
+
+  /**
+   * Whether the plugin's processing is complete.
+   *
    * @return [type] [description]
    */
   public function complete() {
     return $this->complete;
+  }
+
+  /**
+   * Validate code and set internal valid property.
+   *
+   * @param string $code Code to be validated
+   * @return bool Whether code is valid
+   */
+  protected function validate($code) {
+    if ((string) $code === (string) $this->code) {
+      $this->valid = TRUE;
+      return TRUE;
+    }
+    else {
+      return FALSE;
+    }
   }
 
   /**
@@ -250,59 +302,58 @@ abstract class TfaPlugin {
 }
 
 /**
+ * Interface TfaValidationPlugin
  *
+ * Validation plugins interact with the TFA form processes to provide code entry
+ * and validate submitted codes.
+ */
+interface TfaValidationPlugin {
+
+  /**
+   * Get TFA process form from plugin.
+   *
+   * @param array Existing form.
+   * @return array Form API array.
+   */
+  public function getForm($form);
+
+  /**
+   * Validate form.
+   *
+   * @param array $form_state
+   * @return bool Whether form passes validation or not
+   */
+  public function validateForm(&$form_state);
+}
+
+/**
+ * Interface TfaLoginPlugin
+ *
+ * Login plugins interact with the TFA loginAllowed() process prior to starting
+ * a TFA process.
  */
 interface TfaLoginPlugin {
 
   /**
-   * [loginAllowed description]
-   * @return [type] [description]
+   * Whether authentication should be interrupted.
+   *
+   * @return bool
    */
   public function loginAllowed();
 }
 
 /**
+ * Interface TfaSendPlugin
  *
- */
-interface TfaTotpPlugin {
-
-  /**
-   * [getForm description]
-   * @param  [type] $form [description]
-   * @return [type]       [description]
-   */
-  public function getForm($form);
-
-  /**
-   * [validate description]
-   * @param  [type] $code [description]
-   * @return [type]       [description]
-   */
-  public function validate($code);
-}
-
-/**
+ * Send plugins interact with the TFA begin() process to communicate a code
+ * during the start of the TFA process.
  *
+ * Implementations of a send plugin should also be a validation plugin.
  */
 interface TfaSendPlugin {
 
   /**
-   * [begin description]
-   * @return [type] [description]
+   * Transfer code.
    */
-  public function begin();
-
-  /**
-   * [getForm description]
-   * @param  [type] $form [description]
-   * @return [type]       [description]
-   */
-  public function getForm($form);
-
-  /**
-   * [validate description]
-   * @param  [type] $code [description]
-   * @return [type]       [description]
-   */
-  public function validate($code);
+  public function send();
 }

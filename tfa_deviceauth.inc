@@ -1,6 +1,6 @@
 <?php
 
-class TfaDeviceAuth extends TfaPlugin implements TfaLoginPlugin {
+class TfaDeviceAuth extends TfaBasePlugin implements TfaLoginPlugin {
 
   public function loginAllowed() {
     // check if cookie is present

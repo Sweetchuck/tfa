@@ -4,19 +4,29 @@
  * @file tfa.pages.inc
  */
 
+/**
+ * Start of TFA process form.
+ *
+ * @param  string $uid User account ID
+ */
 function tfa_begin_form($uid) {
   $account = user_load($uid);
 
   return drupal_get_form('tfa_form', $account);
 }
 
+/**
+ * Main TFA process form builder.
+ *
+ * Invokes plugin getForm() and handles multi-step fallback.
+ */
 function tfa_form($form, $form_state, $account) {
 
   // Check validation flood.
-  /*if (!flood_is_allowed('tfa_validate', variable_get('tfa_hourly_threshold', 5))) {
+  if (!flood_is_allowed('tfa_validate', variable_get('tfa_hourly_threshold', 5))) {
     drupal_set_message(t('You have reached the threshold for incorrect code entry attempts. Please try again later.'), 'error');
     return drupal_access_denied();
-  }*/ // @todo
+  }
 
   if (empty($form_state['storage']['tfa_context'])) {
     $tfa = tfa_get_process($account);
@@ -25,12 +35,9 @@ function tfa_form($form, $form_state, $account) {
     tfa_set_context($account, $form_state['storage']['tfa_context']);
     $tfa = tfa_get_process($account);
   }
+  // Begin process.
   $tfa->begin();
-  $form = $tfa->getForm();
-  $form['uid'] = array(
-    '#type' => 'value',
-    '#value' => $account->uid,
-  );
+  $form = $tfa->getForm($form);
   if ($tfa->hasFallback) {
     $form['fallback'] = array(
       '#type' => 'submit',
@@ -39,44 +46,62 @@ function tfa_form($form, $form_state, $account) {
       '#limit_validation_errors' => array(),
     );
   }
+  // Set required UID element.
+  $form['uid'] = array(
+    '#type' => 'value',
+    '#value' => $account->uid,
+  );
 
   return $form;
 }
 
+/**
+ * TFA form validation handler.
+ *
+ * Invokes plugin validateForm() and getErrorMessages().
+ */
 function tfa_form_validate($form, &$form_state) {
   // No validation when issuing fallback.
   if (isset($form_state['values']['fallback']) && $form_state['values']['op'] === $form_state['values']['fallback']) {
     return;
   }
-//  dpm($form_state, 'validate');
-  $code = $form_state['values']['code'];
   $account = user_load($form_state['values']['uid']);
-
   $tfa = tfa_get_process($account);
-  if (!$tfa->validate($code)) {
-    form_set_error('code', t('Invalid code.'));
+
+  if (!$tfa->validateForm($form_state)) {
+    foreach ($tfa->getErrorMessages() as $element => $message) {
+      form_set_error($element, $message);
+    }
     // Register failure for purposes of flood control.
-    flood_register_event('tfa_validate'); // @todo
+    flood_register_event('tfa_validate');
   }
 }
 
+/**
+ * TFA form submission handler.
+ *
+ * Invokes plugin submitForm() and processComplete() and handles starting
+ * multi-step if appropriate.
+ */
 function tfa_form_submit($form, &$form_state) {
   // @todo can form uid value be manipulated??
   $account = user_load($form['uid']['#value']);
   $tfa = tfa_get_process($account);
   $tfa->submitForm($form_state);
 
- // dpm($tfa->getContext(), 'submit handler');
   if (!$tfa->processComplete()) {
-    //drupal_set_message('rebuild');
-    // set TFA context
+    // Store TFA context for form rebuild.
     $form_state['storage']['tfa_context'] = $tfa->getContext();
     $form_state['rebuild'] = TRUE;
+    // Clear validation flood.
+    flood_clear_event('tfa_validate');
+    // @todo handle flood control bypass by swapping plugins -- maybe with tfa_begin?
   }
   else {
+    // TFA process is complete so finalize and authenticate user.
     $tfa->finalize();
     tfa_login($account);
-    $form_state['redirect'] = 'user';
+    $form_state['redirect'] = 'user'; // @todo handle prior destination
   }
 }
 
@@ -101,11 +126,12 @@ function tfa_admin_settings() {
     elseif (in_array('TfaLoginPlugin', class_implements($data['class']))) {
       $login_plugins[$key] = $data['name'];
     }
-    elseif (is_subclass_of($data['class'], 'TfaPlugin')) {
+    elseif (is_subclass_of($data['class'], 'TfaBasePlugin')) {
       $plugins[$key] = $data['name'];
     }
   }
 
+  // Force set test plugins. @todo
   variable_set('tfa_login_plugin', 'TfaDeviceAuth');
   variable_set('tfa_validate_plugin', 'TfaTotp');
   variable_set('tfa_fallback_plugins', array('TfaEmail', 'TfaRecoveryCode'));

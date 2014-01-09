@@ -9,6 +9,7 @@
  * Implements hook_tfa_api().
  */
 function tfa_test_tfa_api() {
+  // Test plugins.
   return array(
     'tfa_test_login' => array(
       'class' => 'TfaTestLogin',
@@ -27,8 +28,4 @@ function tfa_test_tfa_api() {
       'name' => 'Fallback test',
     ),
   );
-}
-
-function _tfa_test_set_context($account, $context) {
-  $_SESSION['tfa'][$account->uid] = $context;
 }

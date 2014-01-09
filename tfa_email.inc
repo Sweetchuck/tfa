@@ -1,6 +1,6 @@
 <?php
 
-class TfaEmail extends TfaPlugin implements TfaSendPlugin {
+class TfaEmail extends TfaBasePlugin implements TfaValidationPlugin, TfaSendPlugin {
 
   public function getForm($form) {
     $form['code'] = array(
@@ -35,14 +35,20 @@ class TfaEmail extends TfaPlugin implements TfaSendPlugin {
     }
   }
 
-  public function begin() {
+  public function send() {
     $code = $this->generate();
-    $this->send($code);
+    $this->sendCode($code);
   }
 
-  public function validate($code) {
+  public function validateForm(&$form_state) {
     $this->code = variable_get('tfa_test', '3lk2jf3');
-    return parent::validate($code);
+    if (!parent::validate($form_state['values']['code'])) {
+      $this->errorMessages['code'] = t('Invalid code.');
+      return FALSE;
+    }
+    else {
+      return TRUE;
+    }
   }
 
   protected function generate() {
@@ -53,7 +59,7 @@ class TfaEmail extends TfaPlugin implements TfaSendPlugin {
     return $code;
   }
 
-  protected function send($code) {
+  protected function sendCode($code) {
     /*$params = array(
       'code' => $code,
       'message' => $message,

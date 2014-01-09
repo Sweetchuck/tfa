@@ -11,7 +11,6 @@
 class TfaTestCase extends DrupalWebTestCase {
 
   public static function getInfo() {
-    // Note: getInfo() strings are not translated with t().
     return array(
       'name' => 'Two-factor Authentication',
       'description' => 'Test the Two-factor authentication process.',
@@ -24,31 +23,12 @@ class TfaTestCase extends DrupalWebTestCase {
     parent::setUp('tfa', 'tfa_test');
   }
 
-  /**
-   * Helper function for storing UI strings.
-   */
-  private function interfaceStrings($id) {
-    switch ($id) {
-      case 'send-input':
-        return 'Enter sent code';
-      case 'invalid-code':
-        return 'Invalid code';
-      case 'flood-send':
-        return 'You have reached the hourly threshold for login attempts. Please try again later.';
-      case 'flood-validate':
-        return 'You have reached the threshold for incorrect code entry attempts. Please try again later.';
-    }
-  }
-
-  /*public function testFloodControl() {
-    // Enable test plugins.
-    //variable_set('tfa_login_plugin', 'TfaDeviceAuth');
+  public function testAuthentication() {
+    // Enable test plugin.
     variable_set('tfa_validate_plugin', 'TfaTestSend');
-    //variable_set('tfa_fallback_plugins', array('TfaEmail', 'TfaRecoveryCode'));
+    $code = $this->randomName();
+    variable_set('tfa_test_code', $code);
 
-    // Set the TFA hourly flood threshold.
-    //$hourly_threshold = 3;
-    //variable_set('tfa_hourly_threshold', $hourly_threshold);
     $account = $this->drupalCreateUser(array());
 
     $edit = array(
@@ -56,7 +36,82 @@ class TfaTestCase extends DrupalWebTestCase {
       'pass' => $account->pass_raw,
     );
     $this->drupalPost('user', $edit, t('Log in'));
+    $url_parts = explode('/', $this->url);
+    $login_hash = array_pop($url_parts);
+
     // Check that TFA process has begun.
+    $this->assertText('Enter sent code', 'The send code input appears');
+    // Confirm no fallback button.
+    $this->assertNoFieldById('edit-fallback', '', 'Fallback button does not appear');
+    $this->assertNoText('My account', 'Authenticated text does not appear');
+    // Confirm validation error.
+    $edit = array(
+      'code' => $this->randomName(),
+    );
+    $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, t('Submit'));
+    $this->assertText('Invalid sent code', 'Error message appears for random code');
+    // Check resend text.
+    $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, array(), t('Resend'));
+    $this->assertText('Code resent', 'Resent message appears');
+    // Confirm login.
+    $edit = array(
+      'code' => $code,
+    );
+    $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, t('Submit'));
+    $this->assertText('My account', 'Authenticated text appears');
+    $this->assertText($account->name, 'Username appears');
+
+    $this->drupalGet('user/logout');
+
+    // Enable TOTP and two fallback.
+    variable_set('tfa_validate_plugin', 'TfaTestTotp');
+    variable_set('tfa_fallback_plugins', array('TfaTestSend', 'TfaTestFallback'));
+
+    $edit = array(
+      'name' => $account->name,
+      'pass' => $account->pass_raw,
+    );
+    $this->drupalPost('user', $edit, t('Log in'));
+    $url_parts = explode('/', $this->url);
+    $login_hash = array_pop($url_parts);
+
+    // Check that TOTP has begun.
+    $this->assertText('TOTP code', 'TOTP code appears');
+    $this->assertFieldById('edit-fallback', '', 'Fallback button appears');
+    // Begin fallback.
+    $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, array(), $this->uiStrings('fallback-button'));
+    $this->assertText('Enter sent code', 'The send code input appears');
+    // Second fallback.
+    $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, array(), $this->uiStrings('fallback-button'));
+    $this->assertText('Enter recovery code', 'The recovery code input appears');
+    // Confirm validation error.
+    $edit = array(
+      'recover' => $this->randomName(),
+    );
+    $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, t('Submit'));
+    $this->assertText('Invalid recovery code', 'Error message appears for random code');
+    // Confirm login.
+    $edit = array(
+      'recover' => 'FAILSAFE',
+    );
+    $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, t('Submit'));
+    $this->assertText('My account', 'Authenticated text appears');
+    $this->assertText($account->name, 'Username appears');
+  }
+
+  public function testFloodControl() {
+    // Enable test plugin.
+    variable_set('tfa_validate_plugin', 'TfaTestSend');
+    // Set the TFA hourly flood threshold.
+    $hourly_threshold = 3;
+    variable_set('tfa_hourly_threshold', $hourly_threshold);
+    $account = $this->drupalCreateUser(array());
+
+    $edit = array(
+      'name' => $account->name,
+      'pass' => $account->pass_raw,
+    );
+    $this->drupalPost('user', $edit, t('Log in'));
 
     // Check TFA validation flood.
     $url_parts = explode('/', $this->url);
@@ -64,90 +119,22 @@ class TfaTestCase extends DrupalWebTestCase {
     $edit = array(
       'code' => $this->randomName(),
     );
-    $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, t('Log in'));
-    $this->assertText($this->interfaceStrings('invalid-code'), 'The "invalid code" text appears');
+    $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, t('Submit'));
+    $this->assertText('Invalid sent code', 'Error message appears for random code');
     // Hit flood limit.
     for ($i = 1; $i < $hourly_threshold; $i++) {
-      $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, t('Log in'));
+      $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, t('Submit'));
     }
-    $this->drupalGet('system/tfa/' . $account->uid . '/' . $login_hash); // Unsure why this is necessary.
-    $this->assertText($this->interfaceStrings('flood-validate'), 'The "TFA validate flood" text appears');
-
-    // Check TFA send flood.
-    $edit = array(
-      'name' => $account->name,
-      'pass' => $account->pass_raw,
-    );
-    for ($i = 0; $i < $hourly_threshold; $i++) {
-      $this->drupalPost('user', $edit, t('Log in'));
-    }
-    $this->assertText($this->interfaceStrings('flood-send'), 'The "TFA sent flood" text appears');
-    // Force clear so other tests don't unnecessarily fail.
-    flood_clear_event('tfa_send');
-    flood_clear_event('tfa_validate');
-  }*/
-
-  public function testAuthentication() {
-    // Enable test plugins
-    variable_set('tfa_validate_plugin', 'TfaTestSend');
-    //variable_set('tfa_fallback_plugins', array('TfaEmail', 'TfaRecoveryCode'));
-
-    $account = $this->drupalCreateUser(array());
-
-    $edit = array(
-      'name' => $account->name,
-      'pass' => $account->pass_raw,
-    );
-    $this->drupalPost('user', $edit, t('Log in'));
-    // Check that TFA process has begun.
-    $this->assertText($this->interfaceStrings('send-input'), 'The send code input appears');
-    $this->assertNoText('My account', 'Authenticated text does not appear');
-    // Check that TFA process has begun.
-    /*$this->assertText($this->interfaceStrings('sent'), 'The "TFA sent message" text appears');
-    $url_parts = explode('/', $this->url);
-    $login_hash = array_pop($url_parts);
-    // Get the login code.
-    $code = tfa_get_code($account->uid);
-    $edit = array(
-      'code' => $code['code'],
-    );
-    $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, t('Log in'));
-    $this->drupalGet('user');
-    $this->assertLink('Log out', 0, 'The user succesfully logged in');*/
+    $this->drupalGet('system/tfa/' . $account->uid . '/' . $login_hash); // Not sure why this is necessary.
+    $this->assertText($this->uiStrings('flood-validate'), 'The validation flood text appears');
   }
 
-  /*public function testProcessAlter() {
-    // Enable process alter.
-    variable_set('tfa_channel', 'tfa_test');
-    variable_set('tfa_test_alter_process', TRUE);
-    variable_set('tfa_test_allow_skip', FALSE);
-
-    $account = $this->drupalCreateUser(array());
-    $edit = array(
-      'name' => $account->name,
-      'pass' => $account->pass_raw,
-    );
-    $this->drupalPost('user', $edit, t('Log in'));
-    // Check that TFA process has begun.
-    $this->assertText($this->interfaceStrings('sent'), 'The "TFA sent message" text appears');
-    $url_parts = explode('/', $this->url);
-    $login_hash = array_pop($url_parts);
-    // Get the login code.
-    $code = tfa_get_code($account->uid);
-    $edit = array(
-      'code' => $code['code'],
-    );
-    $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, t('Log in'));
-    $this->drupalGet('user');
-    $this->assertLink('Log out', 0, 'The user succesfully logged in');
-    $this->drupalGet('user/logout');
-    $this->assertLink('Request new password', 0, 'User has logged out');
-    $edit = array(
-      'name' => $account->name,
-      'pass' => $account->pass_raw,
-    );
-    $this->drupalPost('user', $edit, t('Log in'));
-    $this->assertNoText($this->interfaceStrings('sent'), 'The "TFA sent message" text does not appear');
-    $this->assertLink('Log out', 0, 'TFA process alter sucessfully used to log in user by skipping TFA code process');
-  }*/
+  protected function uiStrings($id) {
+    switch ($id) {
+      case 'fallback-button':
+        return "Can't access your account?";
+      case 'flood-validate':
+        return 'You have reached the threshold for incorrect code entry attempts. Please try again later.';
+    }
+  }
 }
