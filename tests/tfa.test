@@ -21,11 +21,12 @@ class TfaTestCase extends DrupalWebTestCase {
   public function setUp() {
     // Enable TFA module and the test module.
     parent::setUp('tfa', 'tfa_test');
+    variable_set('tfa_enabled', TRUE);
   }
 
   public function testAuthentication() {
     // Enable test plugin.
-    variable_set('tfa_validate_plugin', 'TfaTestSend');
+    variable_set('tfa_validate_plugin', 'tfa_test_send');
     $code = $this->randomName();
     variable_set('tfa_test_code', $code);
 
@@ -65,8 +66,8 @@ class TfaTestCase extends DrupalWebTestCase {
     $this->drupalGet('user/logout');
 
     // Enable TOTP and two fallback.
-    variable_set('tfa_validate_plugin', 'TfaTestTotp');
-    variable_set('tfa_fallback_plugins', array('TfaTestSend', 'TfaTestFallback'));
+    variable_set('tfa_validate_plugin', 'tfa_test_totp');
+    variable_set('tfa_fallback_plugins', array('tfa_test_send', 'tfa_test_fallback'));
 
     $edit = array(
       'name' => $account->name,
@@ -101,10 +102,10 @@ class TfaTestCase extends DrupalWebTestCase {
 
   public function testFloodControl() {
     // Enable test plugin.
-    variable_set('tfa_validate_plugin', 'TfaTestSend');
+    variable_set('tfa_validate_plugin', 'tfa_test_send');
     // Set the TFA hourly flood threshold.
     $hourly_threshold = 3;
-    variable_set('tfa_hourly_threshold', $hourly_threshold);
+    variable_set('tfa_validate_threshold', $hourly_threshold);
     $account = $this->drupalCreateUser(array());
 
     $edit = array(
@@ -127,11 +128,20 @@ class TfaTestCase extends DrupalWebTestCase {
     }
     $this->drupalGet('system/tfa/' . $account->uid . '/' . $login_hash); // Not sure why this is necessary.
     $this->assertText($this->uiStrings('flood-validate'), 'The validation flood text appears');
+
+    variable_set('tfa_begin_threshold', 2);
+    // Check process begin flood.
+    $edit = array(
+      'name' => $account->name,
+      'pass' => $account->pass_raw,
+    );
+    $this->drupalPost('user', $edit, t('Log in'));
+    $this->assertText($this->uiStrings('flood-begin'), 'The begin flood text appears');
   }
 
   public function testRedirection() {
     // Enable test plugin.
-    variable_set('tfa_validate_plugin', 'TfaTestSend');
+    variable_set('tfa_validate_plugin', 'tfa_test_send');
     $code = $this->randomName();
     variable_set('tfa_test_code', $code);
 
@@ -172,6 +182,8 @@ class TfaTestCase extends DrupalWebTestCase {
         return "Can't access your account?";
       case 'flood-validate':
         return 'You have reached the threshold for incorrect code entry attempts. Please try again later.';
+      case 'flood-begin':
+        return 'You have reached the threshold for TFA attempts. Please try again later.';
     }
   }
 }

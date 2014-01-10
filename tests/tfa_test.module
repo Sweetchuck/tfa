@@ -23,7 +23,7 @@ function tfa_test_tfa_api() {
       'class' => 'TfaTestTotp',
       'name' => 'TOTP test',
     ),
-    'tfa_test_fallbase' => array(
+    'tfa_test_fallback' => array(
       'class' => 'TfaTestFallback',
       'name' => 'Fallback test',
     ),

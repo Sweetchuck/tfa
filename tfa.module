@@ -15,7 +15,7 @@ function tfa_menu() {
     'access callback' => 'tfa_entry_access',
     'access arguments' => array(2, 3),
     'type' => MENU_CALLBACK,
-    'file' => 'tfa.pages.inc',
+    'file' => 'tfa.form.inc',
   );
   $items['admin/config/people/tfa'] = array(
     'title' => 'Two-factor Authentication',
@@ -23,7 +23,7 @@ function tfa_menu() {
     'page callback' => 'drupal_get_form',
     'page arguments' => array('tfa_admin_settings'),
     'access arguments' => array('admin tfa settings'),
-    'file' => 'tfa.pages.inc',
+    'file' => 'tfa.admin.inc',
   );
   return $items;
 }
@@ -48,6 +48,7 @@ function tfa_permission() {
     'skip tfa' => array(
       'title' => t('Skip TFA process'),
       'description' => t('Skip the Two-factor authentication process and authenticate as normal.'),
+      'restrict access' => TRUE,
     ),
     'admin tfa settings' => array(
       'title' => t('Administer TFA'),
@@ -73,19 +74,6 @@ function tfa_get_plugin($account) {
 }
 
 /**
- * Get systems active plugins.
- *
- * @return array
- */
-function tfa_get_active_plugins() {
-  return array(
-    'login' => variable_get('tfa_login_plugin', ''),
-    'validate' => variable_get('tfa_validate_plugin', ''),
-    'fallback' => variable_get('tfa_fallback_plugins', array()),
-  );
-}
-
-/**
  * Set context for account's TFA process.
  * @param $account User account
  * @param array $context Context array
@@ -100,14 +88,15 @@ function tfa_set_context($account, $context) {
 
 /**
  * Context for account TFA process.
+ *
  * @param $account User account
  * @return array
  *   array(
  *     'uid' => 9,
  *     'plugins' => array(
- *       'login' => 'TfaLoginPlugin',
- *       'validate' => 'TfaSendPlugin',
- *       'fallback' => array('TfaRecoveryCode'),
+ *       'login' => 'TfaMyLoginPlugin',
+ *       'validate' => 'TfaMySendPlugin',
+ *       'fallback' => array('TfaMyRecoveryCodePlugin'),
  *     ),
  */
 function tfa_get_context($account) {
@@ -116,20 +105,40 @@ function tfa_get_context($account) {
   }
   else {
     $context = array('uid' => $account->uid, 'plugins' => array());
-    // @todo check if account's can set their own plugin
-    $plugin = tfa_get_plugin($account);
-    foreach (module_invoke_all('tfa_api') as $key => $data) {
-      if ($plugin === $key) {
-        $context['plugins']['validate'] = $data['class'];
+
+    $api = module_invoke_all('tfa_api');
+    // Add system plugins.
+    $login = variable_get('tfa_login_plugin', '');
+    // @todo support multiple login plugins
+    if (!empty($login) && array_key_exists($login, $api)) {
+      $context['plugins']['login'] = $api[$login]['class'];
+    }
+    $validate = variable_get('tfa_validate_plugin', '');
+    if (!empty($validate) && array_key_exists($validate, $api)) {
+      $context['plugins']['validate'] = $api[$validate]['class'];
+    }
+    $user_plugin = tfa_get_plugin($account);
+    // Replace validate plugin by user's if they can set their own. @todo
+    if (!empty($user_plugin) && array_key_exists($user_plugin, $api)) {
+      $context['plugins']['validate'] = $api[$user_plugin]['class'];
+    }
+    // Add fallback plugins.
+    foreach (variable_get('tfa_fallback_plugins', array()) as $key) {
+      if (array_key_exists($key, $api)) {
+        $context['plugins']['fallback'][] = $api[$key]['class'];
       }
     }
-    // Add system plugins.
-    $context['plugins'] = array_merge(tfa_get_active_plugins(), $context['plugins']);
+    $_SESSION['tfa'][$account->uid] = $context;
     return $context;
   }
-  return array();
 }
 
+/**
+ * Get Tfa object in the account's current context.
+ *
+ * @param  $account User account object
+ * @return Tfa
+ */
 function tfa_get_process($account) {
   $tfa = &drupal_static(__FUNCTION__);
   if (!isset($tfa)) {
@@ -158,11 +167,69 @@ function tfa_tfa_api() {
       'class' => 'TfaTotp',
       'name' => 'TOTP',
     ),
-    'tfa_recovercode' => array(
+    'tfa_recoverycode' => array(
       'class' => 'TfaRecoveryCode',
       'name' => 'Recovery codes',
     ),
   );
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function tfa_form_alter(&$form, &$form_state, $form_id) {
+  switch ($form_id) {
+    case 'user_login':
+    case 'user_login_block':
+      if (variable_get('tfa_enabled', 0)) {
+        // Replace Drupal's login submit handler with TFA to check if
+        // authentication should be interrupted and user redirected to TFA form.
+        $form['#submit'] = array_diff($form['#submit'], array('user_login_submit'));
+        $form['#submit'][] = 'tfa_login_submit';
+      }
+      break;
+  }
+}
+
+/**
+ * Login submit handler.
+ */
+function tfa_login_submit($form, &$form_state) {
+  // Similar to tfa_user_login() but not required to force user logout.
+
+  $account = isset($form_state['uid']) ? user_load($form_state['uid']) : user_load_by_name($form_state['values']['name']);
+  $tfa = tfa_get_process($account);
+
+  if (variable_get('tfa_required', 0) && !user_access('skip tfa', $account) && !$tfa->ready()) {
+    drupal_set_message(t('Login disallowed till your account is setup for TFA. Contact a site administrator.'), 'error');
+    $form_state['redirect'] = 'user';
+  }
+  elseif (!user_access('skip tfa', $account) && !tfa_login_allowed($account)) {
+
+    // Restart flood levels.
+    flood_clear_event('tfa_validate');
+    flood_register_event('tfa_begin');
+
+    $query = drupal_get_query_parameters();
+    if (!empty($form_state['redirect'])) {
+      // If there's an existing redirect set it in TFA context and
+      // tfa_form_submit() will extract and set once process is complete.
+      $context = tfa_get_context($account);
+      $context['redirect'] = $form_state['redirect'];
+      tfa_set_context($account, $context);
+    }
+    unset($_GET['destination']);
+
+    $login_hash = tfa_login_hash($account);
+    $form_state['redirect'] = array(
+      'system/tfa/' . $account->uid . '/' . $login_hash,
+      array('query' => $query),
+    );
+  }
+  else {
+    // Authentication can continue so invoke user_login_submit().
+    user_login_submit($form, $form_state);
+  }
 }
 
 /**
@@ -185,7 +252,10 @@ function tfa_login_allowed($account) {
  * Implements hook_user_login().
  */
 function tfa_user_login(&$edit, $account) {
-  global $user;
+
+  if (!variable_get('tfa_enabled', 0)) {
+    return;
+  }
 
   $tfa = tfa_get_process($account);
   if (variable_get('tfa_required', 0) && !user_access('skip tfa', $account) && !$tfa->ready()) {
@@ -194,14 +264,13 @@ function tfa_user_login(&$edit, $account) {
     drupal_goto('user');
   }
   elseif (!user_access('skip tfa', $account) && !tfa_login_allowed($account)) {
-    // Log out user and restart flood events.
+    // User has been authenticated so force logout and redirect to TFA form.
     tfa_logout();
+    // Restart flood levels.
     flood_clear_event('tfa_validate');
     flood_register_event('tfa_begin');
 
-    $login_hash = tfa_login_hash($account);
-
-    // Hold onto destination and unset GET parameter. @todo put into context?
+    // Hold onto destination and unset GET parameter.
     $query = drupal_get_query_parameters();
     if (arg(0) == 'user' && arg(1) == 'reset') {
       // If one-time login reset destination and hold onto token.
@@ -209,6 +278,7 @@ function tfa_user_login(&$edit, $account) {
       $query['pass-reset-token'] = arg(4);
     }
     unset($_GET['destination']);
+    $login_hash = tfa_login_hash($account);
     drupal_goto('system/tfa/' . $account->uid . '/' . $login_hash, array('query' => $query));
   }
 }
@@ -246,11 +316,12 @@ function tfa_login($account) {
   drupal_session_regenerate();
 
   watchdog('tfa', 'Session opened for %name.', array('%name' => $user->name));
-  // Set master authenticated context.
+  // Clear existing context and set master authenticated context.
+  $_SESSION['tfa'][$user->uid] = array();
   $_SESSION['tfa'][$user->uid]['login'] = TRUE;
 
   // Truncate flood for user.
-  flood_clear_event('tfa_send');
+  flood_clear_event('tfa_begin');
   flood_clear_event('tfa_validate');
   $edit = array();
   user_module_invoke('login', $edit, $user);
@@ -262,19 +333,14 @@ function tfa_login($account) {
 function tfa_help($path, $arg) {
   $link = '<p>' . t('<a href="!url">Read the TFA configuration documentation</a> on drupal.org.', array('!url' => url('http://drupal.org/node/1663240'))) . '</p>';
   // @todo out of date
-  /*switch ($path) {
+  switch ($path) {
     case 'admin/help#tfa':
       $output = '';
       $output .= '<h3>' . t('Two-factor Authentication') . '</h3>';
-      $output .= '<p>' . t("TFA requires a communication channel to transfer the login code and an address to send to. By default, TFA will use the SMS Framework if installed. Add a user field to store phone numbers to enable TFA.") . '<p>';
+      $output .= '<p>' . t("") . '<p>';
       $output .= $link;
       return $output;
-    case 'admin/config/people/tfa':
-      $output = '<p>' . t('For TFA to properly function you must select a communication channel for the TFA code. If using the SMS Framework create and select a user account field that contains the number to use.') . '</p>';
-      $output .= $link;
-      $output .= '<p>' . t('Note, unless you choose the "Require TFA process" option users will <strong>only be required to follow the TFA process</strong> if they have an address setup for code delivery.') . '</p>';
-      return $output;
-  }*/
+  }
 }
 
 /**

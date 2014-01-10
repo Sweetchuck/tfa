@@ -38,12 +38,12 @@ function tfa_schema() {
  * Implements hook_uninstall().
  */
 function tfa_uninstall() {
-  variable_del('tfa_send');
-  variable_del('tfa_totp');
+  variable_del('tfa_login_plugin');
+  variable_del('tfa_validate_plugin');
+  variable_del('tfa_fallback_plugins');
 
-  variable_del('tfa_hourly_threshold');
-  variable_del('tfa_send_message');
-  variable_del('tfa_code_length');
-  variable_del('tfa_channel');
-  variable_del('tfa_phone_field');
+  variable_del('tfa_validate_threshold');
+  variable_del('tfa_begin_threshold');
+  variable_del('tfa_required');
+  variable_del('tfa_enabled');
 }

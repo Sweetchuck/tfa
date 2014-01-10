@@ -9,8 +9,6 @@
  */
 class Tfa {
 
-  public $hasFallback;
-
   protected $plugins = array();
   protected $plugin_info;
   protected $account;
@@ -21,27 +19,55 @@ class Tfa {
   protected $validatePlugin;
   protected $fallbackPlugins;
   protected $complete;
+  protected $fallback;
 
   /**
    * TFA constructor.
    *
-   * @param [type] $plugins [description]
-   * @param array  $context [description]
+   * @param array $plugins
+   *   Plugins to instansiate.
+   *
+   *   Must include key:
+   *
+   *     - 'validate'
+   *       Class name of TfaPlugin implementing TfaValidationPlugin.
+   *
+   *   May include keys:
+   *
+   *     - 'login'
+   *       Class name of TfaPlugin implementing TfaLoginPlugin.
+   *
+   *     - 'fallback'
+   *       Array of classes of TfaPlugin that can be used as fallback processes.
+   *
+   * @param array $context
+   *   Context of TFA process.
+   *
+   *   Must include key:
+   *
+   *     - 'uid'
+   *       Account uid of user in TFA process.
+   *
+   *   May include key:
+   *
+   *     - 'redirect'
+   *       String or array suitable for $form_state['redirect'].
    */
   public function __construct($plugins, array $context = array()) {
     $this->validatePlugin = NULL;
     if (!empty($plugins['validate'])) {
       $this->validatePlugin = new $plugins['validate']($context);
     }
+    // @todo support multiple login plugins
     $this->loginPlugin = NULL;
     if (!empty($plugins['login'])) {
       $this->loginPlugin = new $plugins['login']($context);
     }
-    $this->hasFallback = FALSE;
+    $this->fallback = FALSE;
     if (!empty($plugins['fallback'])) {
       // @todo may not work since submitForm will need to check ready()
       $this->fallbackPlugins = $plugins['fallback'];
-      $this->hasFallback = TRUE;
+      $this->fallback = TRUE;
     }
     //$this->plugin = $plugin;
     $this->context = $context;
@@ -67,7 +93,7 @@ class Tfa {
    * @return bool Whether process can begin or not.
    */
   public function ready() {
-    return TRUE; // @todo invoke plugin ready
+    return $this->validatePlugin->ready();
   }
 
   /**
@@ -105,18 +131,38 @@ class Tfa {
    */
   public function submitForm(&$form_state) {
     // Handle fallback if set.
-    if ($this->hasFallback && isset($form_state['values']['fallback']) && $form_state['values']['op'] === $form_state['values']['fallback']) {
-      //dpm('issuing fallback');
+    if ($this->fallback && isset($form_state['values']['fallback']) && $form_state['values']['op'] === $form_state['values']['fallback']) {
       // Change context to next fallback.
-      // @todo check that fallbacks aren't extinguished.
       $this->context['plugins']['validate'] = array_shift($this->context['plugins']['fallback']);
+      if (empty($this->context['plugins']['fallback'])) {
+        $this->fallback = FALSE;
+      }
     }
+    // Otherwise invoke plugin submitForm().
     elseif (method_exists($this->validatePlugin, 'submitForm')) {
-      //dpm('calling plugin submitForm');
       $this->validatePlugin->submitForm($form_state);
     }
     // Check if plugin is complete.
     $this->complete = $this->validatePlugin->complete();
+  }
+
+  /**
+   * Begin the TFA process.
+   */
+  public function begin() {
+    // Invoke send method on send validation plugins.
+    if (method_exists($this->validatePlugin, 'send')) {
+      $code = $this->validatePlugin->send();
+    }
+  }
+
+  /**
+   * Whether the TFA process has any fallback proceses.
+   *
+   * @return bool
+   */
+  public function hasFallback() {
+    return $this->fallback;
   }
 
   /**
@@ -129,34 +175,25 @@ class Tfa {
   }
 
   /**
+   * Whether the TFA process is complete.
    *
-   * @return bool [description]
+   * @return bool
    */
   public function processComplete() {
     return $this->complete;
   }
 
   /**
-   * [begin description]
-   * @return [type] [description]
-   */
-  public function begin() {
-    if (method_exists($this->validatePlugin, 'send')) {
-      $code = $this->validatePlugin->send();
-    }
-  }
-
-  /**
-   * [valid description]
-   * @return [type] [description]
+   * Whether the TFA process is valid.
+   *
+   * @return bool
    */
   public function valid() {
     return $this->validatePlugin->valid();
   }
 
   /**
-   * [finalize description]
-   * @return [type] [description]
+   * Run TFA process finalization.
    */
   public function finalize() {
     // Delete code if necessary
@@ -178,11 +215,18 @@ abstract class TfaBasePlugin {
   protected $complete;
   protected $valid;
   protected $errorMessages;
+  protected $encryptionKey;
 
   /**
    * Plugin constructor.
    *
-   * @param array $context [description]
+   * @param array $context
+   *   Context of current TFA process.
+   *
+   *   Must include key:
+   *
+   *     - 'uid'
+   *       Account uid of user in TFA process.
    */
   public function __construct(array $context = array()) {
     $this->context = $context;
@@ -193,7 +237,16 @@ abstract class TfaBasePlugin {
   }
 
   /**
-   * Get error messages in format usable by form_set_error().
+   * Determine if the plugin can run for the current TFA context.
+   *
+   * @return bool
+   */
+  public function ready() {
+    return TRUE;
+  }
+
+  /**
+   * Get error messages suitable for form_set_error().
    *
    * @return array
    */
@@ -214,8 +267,7 @@ abstract class TfaBasePlugin {
   /**
    * Whether the plugin's code processing is valid.
    *
-   * @param  [type] $code [description]
-   * @return [type]       [description]
+   * @return bool
    */
   public function valid() {
     return $this->valid;
@@ -224,7 +276,7 @@ abstract class TfaBasePlugin {
   /**
    * Whether the plugin's processing is complete.
    *
-   * @return [type] [description]
+   * @return bool
    */
   public function complete() {
     return $this->complete;
@@ -247,20 +299,26 @@ abstract class TfaBasePlugin {
   }
 
   /**
-   * [generate description]
-   * @return [type] [description]
+   * Generate a random string of characters of length $this->codeLength.
+   *
+   * @return string
    */
   protected function generate() {
-    return substr(str_shuffle(str_repeat("123456789abcdefghjkmnpqrstuvwxyz", 5)), 0, $this->codeLength);
+    $code = substr(str_shuffle(str_repeat("123456789abcdefghjkmnpqrstuvwxyz", 5)), 0, $this->codeLength);
+    $this->code = $code;
+    return $code;
   }
 
   /**
-   * [encrypt description]
-   * @param  [type] $text [description]
-   * @return [type]       [description]
+   * Encrypt a plaintext string.
+   *
+   * Should be used when writing codes to storage.
+   *
+   * @param string.
+   * @return string
    */
   protected function encrypt($text) {
-    $key = $this->key;
+    $key = $this->encryptionKey;
 
     $td = mcrypt_module_open('rijndael-128', '', 'ecb', '');
     $iv = mcrypt_create_iv(mcrypt_enc_get_iv_size($td), MCRYPT_RAND);
@@ -278,12 +336,15 @@ abstract class TfaBasePlugin {
   }
 
   /**
-   * [decrypt description]
-   * @param  [type] $data [description]
-   * @return [type]       [description]
+   * Decrypt a encrypted string.
+   *
+   * Should be used when reading codes from storage.
+   *
+   * @param string
+   * @return string
    */
   protected function decrypt($data) {
-    $key = $this->key;
+    $key = $this->encryptionKey;
 
     $td = mcrypt_module_open('rijndael-128', '', 'ecb', '');
     $iv = mcrypt_create_iv(mcrypt_enc_get_iv_size($td), MCRYPT_RAND);
@@ -299,6 +360,7 @@ abstract class TfaBasePlugin {
 
     return $text;
   }
+
 }
 
 /**
