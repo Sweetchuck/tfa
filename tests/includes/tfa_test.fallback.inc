@@ -1,6 +1,6 @@
 <?php
 
-class TfaTestFallback extends TfaBasePlugin implements TfaValidationPlugin {
+class TfaTestFallback extends TfaBasePlugin implements TfaValidationPluginInterface {
 
   public function __construct(array $context = array()) {
     parent::__construct($context);

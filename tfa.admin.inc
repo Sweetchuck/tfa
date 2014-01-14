@@ -14,13 +14,13 @@ function tfa_admin_settings($form, $form_state) {
     if (is_subclass_of($data['class'], 'TfaBasePlugin')) {
       $plugins[$key] = $data;
     }
-    if (in_array('TfaValidationPlugin', class_implements($data['class']))) {
+    if (in_array('TfaValidationPluginInterface', class_implements($data['class']))) {
       $validate_plugins[$key] = $data['name'];
     }
-    if (in_array('TfaSendPlugin', class_implements($data['class']))) {
+    if (in_array('TfaSendPluginInterface', class_implements($data['class']))) {
       $send_plugins[$key] = $data['name'];
     }
-    elseif (in_array('TfaLoginPlugin', class_implements($data['class']))) {
+    elseif (in_array('TfaLoginPluginInterface', class_implements($data['class']))) {
       $login_plugins[$key] = $data['name'];
     }
 
@@ -40,11 +40,10 @@ function tfa_admin_settings($form, $form_state) {
     '#default_value' => $enabled,
     '#description' => t('Enable TFA for account authentication.'),
   );
-
-  // Force set test plugins. @todo
-  //variable_set('tfa_login_plugin', 'tfa_deviceauth');
-  //variable_set('tfa_validate_plugin', 'tfa_totp');
-  //variable_set('tfa_fallback_plugins', array('tfa_email', 'tfa_recovercode'));
+  // Reusable #states for tfa_enabled.
+  $enabled_state = array('visible' => array(
+    ':input[name="tfa_enabled"]' => array('checked' => TRUE))
+  );
 
   $form['plugins'] = array(
     '#type' => 'fieldset',
@@ -57,7 +56,7 @@ function tfa_admin_settings($form, $form_state) {
     if ($enabled && variable_get('tfa_validate_plugin', '') === $key) {
       $message .= ' - active validator';
     }
-    elseif ($enabled && variable_get('tfa_login_plugin', '') === $key) {
+    elseif ($enabled && in_array($key, variable_get('tfa_login_plugins', array()))) {
       $message .= ' - active login';
     }
     elseif ($enabled && in_array($key, variable_get('tfa_fallback_plugins', array()))) {
@@ -81,11 +80,7 @@ function tfa_admin_settings($form, $form_state) {
       '#options' => $validate_plugins,
       '#default_value' => variable_get('tfa_validate_plugin', ''),
       '#description' => t('Plugin that will be used as the default TFA process.'),
-      '#states' => array(
-        'visible' => array(
-          ':input[name="tfa_enabled"]' => array('checked' => TRUE),
-        )
-      ),
+      '#states' => $enabled_state,
     );
   }
   else {
@@ -97,18 +92,63 @@ function tfa_admin_settings($form, $form_state) {
 
   // Order of fallback plugins
   if (count($validate_plugins) > 1) {
+    $enabled_fallback = variable_get('tfa_fallback_plugins', array());
     $form['tfa_fallback'] = array(
-      '#type' => 'checkboxes',
+      '#type' => 'fieldset',
       '#title' => t('Validation fallback plugins'),
-      '#options' => $validate_plugins,
-      '#description' => t('Plugins to be set as fallback to default.'),
-      '#default_value' => variable_get('tfa_fallback_plugins', array()),
-      '#states' => array(
-        'visible' => array(
-          ':input[name="tfa_enabled"]' => array('checked' => TRUE),
-        )
-      ),
+      '#description' => t('Fallback plugins and order.'),
+      '#states' => $enabled_state,
+      '#tree' => TRUE,
     );
+    // First enabled.
+    foreach ($enabled_fallback as $order => $key) {
+      $validate_state = array('invisible' => array(
+        ':input[name="tfa_validate"]' => array('value' => $key))
+      );
+      $form['tfa_fallback'][$key] = array(
+        'enable' => array(
+          '#title' => $validate_plugins[$key],
+          '#type' => 'checkbox',
+          '#default_value' => TRUE,
+          // Don't show options that are set as the main validation plugin.
+          '#states' => $validate_state,
+        ),
+        'weight' => array(
+          '#type' => 'weight',
+          '#title' => t('Order'),
+          '#default_value' => $order,
+          '#delta' => 10,
+          '#title_display' => 'invisible',
+          '#states' => $validate_state,
+        ),
+      );
+    }
+    // Then other plugins.
+    foreach ($validate_plugins as $key => $plugin_name) {
+      if (isset($form['tfa_fallback'][$key])) {
+        continue;
+      }
+      $validate_state = array('invisible' => array(
+        ':input[name="tfa_validate"]' => array('value' => $key))
+      );
+      $form['tfa_fallback'][$key] = array(
+        'enable' => array(
+          '#title' => $plugin_name,
+          '#type' => 'checkbox',
+          '#default_value' => in_array($key, $enabled_fallback) ? TRUE : FALSE,
+          // Don't show options that are set as the main validation plugin.
+          '#states' => $validate_state,
+        ),
+        'weight' => array(
+          '#type' => 'weight',
+          '#title' => t('Order'),
+          '#default_value' => in_array($key, $enabled_fallback) ? array_search($key, $enabled_fallback) : 0,
+          '#delta' => 10,
+          '#title_display' => 'invisible',
+          '#states' => $validate_state,
+        ),
+      );
+    }
   }
 
   // Enable login plugins. @todo make multi-select
@@ -117,28 +157,18 @@ function tfa_admin_settings($form, $form_state) {
       '#type' => 'checkboxes',
       '#title' => t('Login plugins'),
       '#options' => $login_plugins,
-      '#default_value' => array(variable_get('tfa_login_plugin', '')),
-      '#description' => t('Plugins that can allow a user to skip the TFA process.'),
-      '#states' => array(
-        'visible' => array(
-          ':input[name="tfa_enabled"]' => array('checked' => TRUE),
-        )
-      ),
+      '#default_value' => variable_get('tfa_login_plugins', array()),
+      '#description' => t('Plugins that can allow a user to skip the TFA process. If any plugin returns true the user will not be required to follow TFA.'),
+      '#states' => $enabled_state,
     );
   }
-
-  // Allow users to choose their validation method. @todo
 
   $form['tfa_required'] = array(
     '#type' => 'checkbox',
     '#title' => t('Require TFA'),
     '#default_value' => variable_get('tfa_required', 0),
     '#description' => t('Require TFA process for account login. <strong>Note, any account that is not setup for TFA (and does not have the "skip TFA" permission) will not be able to authenticate if this is set.</strong>'),
-    '#states' => array(
-      'visible' => array(
-        ':input[name="tfa_enabled"]' => array('checked' => TRUE),
-      )
-    ),
+    '#states' => $enabled_state,
   );
 
   $form['actions']['#type'] = 'actions';
@@ -155,7 +185,6 @@ function tfa_admin_settings($form, $form_state) {
  */
 function tfa_admin_settings_submit($form, &$form_state) {
   $values = $form_state['values'];
-  dpm($values);
   // Set enabled.
   if (!empty($values['tfa_enabled'])) {
     variable_set('tfa_enabled', $values['tfa_enabled']);
@@ -164,43 +193,61 @@ function tfa_admin_settings_submit($form, &$form_state) {
     variable_del('tfa_enabled');
     return;
   }
-  // Set tfa_validate_plugin
+
+  // Set main validation plugins.
   if (!empty($values['tfa_validate'])) {
     variable_set('tfa_validate_plugin', $values['tfa_validate']);
   }
   else {
     variable_del('tfa_validate_plugin');
   }
-  // Set tfa_fallback_plugins
-  $fallback = array_filter($values['tfa_fallback']);
+
+  // Set fallback plugins.
+  $fallback = array();
+  if (!empty($values['tfa_fallback'])) {
+    foreach ($values['tfa_fallback'] as $key => $data) {
+      if ($values['tfa_validate'] !== $key && $data['enable']) {
+        $fallback[$data['weight']] = $key;
+      }
+    }
+  }
   if (!empty($fallback)) {
-    variable_set('tfa_fallback_plugins', array_keys($fallback));
+    ksort($fallback);
+    variable_set('tfa_fallback_plugins', $fallback);
   }
   else {
     variable_del('tfa_fallback_plugins');
   }
-  // Set tfa_login_plugin.
-  // @todo support multi-select.
-  $login = array_pop($values['tfa_login']);
+
+  // Set login plugins.
+  $login = array();
+  foreach ($values['tfa_login'] as $key => $enabled) {
+    if ($enabled) {
+      $login[] = $key;
+    }
+  }
   if (!empty($login)) {
-    variable_set('tfa_login_plugin', $login);
+    variable_set('tfa_login_plugins', $login);
   }
   else {
-    variable_del('tfa_login_plugin');
+    variable_del('tfa_login_plugins');
   }
   // Set required.
   variable_set('tfa_required', $values['tfa_required']);
 }
 
+/**
+ * Get human-readable types.
+ */
 function _tfa_class_types($class) {
   $types = array();
-  if (in_array('TfaValidationPlugin', class_implements($class))) {
+  if (in_array('TfaValidationPluginInterface', class_implements($class))) {
     $types[] = 'validation';
   }
-  if (in_array('TfaSendPlugin', class_implements($class))) {
+  if (in_array('TfaSendPluginInterface', class_implements($class))) {
     $types[] = 'send';
   }
-  if (in_array('TfaLoginPlugin', class_implements($class))) {
+  if (in_array('TfaLoginPluginInterface', class_implements($class))) {
     $types[] = 'login';
   }
   if (empty($types)) {

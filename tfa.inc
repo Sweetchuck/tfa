@@ -13,13 +13,11 @@ class Tfa {
   protected $plugin_info;
   protected $account;
   protected $context;
-  protected $plugin;
-  protected $loginPlugin;
-  protected $sendPlugin;
-  protected $validatePlugin;
-  protected $fallbackPlugins;
-  protected $complete;
-  protected $fallback;
+  protected $validatePlugin = NULL;
+  protected $loginPlugins = array();
+  protected $fallbackPlugins = array();
+  protected $complete = FALSE;
+  protected $fallback = FALSE;
 
   /**
    * TFA constructor.
@@ -53,38 +51,41 @@ class Tfa {
    *     - 'redirect'
    *       String or array suitable for $form_state['redirect'].
    */
-  public function __construct($plugins, array $context = array()) {
-    $this->validatePlugin = NULL;
+  public function __construct(array $plugins, array $context) {
     if (!empty($plugins['validate'])) {
       $this->validatePlugin = new $plugins['validate']($context);
     }
     // @todo support multiple login plugins
-    $this->loginPlugin = NULL;
     if (!empty($plugins['login'])) {
-      $this->loginPlugin = new $plugins['login']($context);
+      foreach ($plugins['login'] as $class) {
+        $this->loginPlugins[] = new $class($context);
+      }
     }
-    $this->fallback = FALSE;
     if (!empty($plugins['fallback'])) {
       // @todo may not work since submitForm will need to check ready()
       $this->fallbackPlugins = $plugins['fallback'];
       $this->fallback = TRUE;
     }
-    //$this->plugin = $plugin;
     $this->context = $context;
     $this->context['plugins'] = $plugins;
-    $this->complete = FALSE;
-
   }
 
   /**
-   * Whether authentication should be interrupted.
+   * Whether authentication should be allowed and not interrupted.
+   *
+   * If any plugin returns TRUE then authentication is not interrupted by TFA.
    *
    * @return bool
    */
   public function loginAllowed() {
-    if ($this->loginPlugin) {
-      return $this->loginPlugin->loginAllowed();
+    if (!empty($this->loginPlugins)) {
+      foreach ($this->loginPlugins as $class) {
+        if ($class->loginAllowed()) {
+          return TRUE;
+        }
+      }
     }
+    return FALSE;
   }
 
   /**
@@ -212,9 +213,9 @@ abstract class TfaBasePlugin {
   protected $code;
   protected $codeLength;
   protected $context;
-  protected $complete;
-  protected $valid;
-  protected $errorMessages;
+  protected $complete = FALSE;
+  protected $valid = FALSE;
+  protected $errorMessages = array();
   protected $encryptionKey;
 
   /**
@@ -231,9 +232,6 @@ abstract class TfaBasePlugin {
   public function __construct(array $context = array()) {
     $this->context = $context;
     $this->codeLength = 6; // @todo
-    $this->complete = FALSE;
-    $this->valid = FALSE;
-    $this->errorMessages = array();
   }
 
   /**
@@ -291,11 +289,11 @@ abstract class TfaBasePlugin {
   protected function validate($code) {
     if ((string) $code === (string) $this->code) {
       $this->valid = TRUE;
-      return TRUE;
     }
     else {
-      return FALSE;
+      $this->valid = FALSE;
     }
+    return $this->valid;
   }
 
   /**
@@ -369,7 +367,7 @@ abstract class TfaBasePlugin {
  * Validation plugins interact with the TFA form processes to provide code entry
  * and validate submitted codes.
  */
-interface TfaValidationPlugin {
+interface TfaValidationPluginInterface {
 
   /**
    * Get TFA process form from plugin.
@@ -394,7 +392,7 @@ interface TfaValidationPlugin {
  * Login plugins interact with the TFA loginAllowed() process prior to starting
  * a TFA process.
  */
-interface TfaLoginPlugin {
+interface TfaLoginPluginInterface {
 
   /**
    * Whether authentication should be interrupted.
@@ -412,7 +410,7 @@ interface TfaLoginPlugin {
  *
  * Implementations of a send plugin should also be a validation plugin.
  */
-interface TfaSendPlugin {
+interface TfaSendPluginInterface {
 
   /**
    * Transfer code.

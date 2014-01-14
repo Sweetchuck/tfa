@@ -1,6 +1,6 @@
 <?php
 
-class TfaRecoveryCode extends TfaBasePlugin implements TfaValidationPlugin {
+class TfaRecoveryCode extends TfaBasePlugin implements TfaValidationPluginInterface {
 
   public function __construct(array $context = array()) {
     parent::__construct($context);

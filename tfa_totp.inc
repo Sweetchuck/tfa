@@ -1,6 +1,6 @@
 <?php
 
-class TfaTotp extends TfaBasePlugin implements TfaValidationPlugin {
+class TfaTotp extends TfaBasePlugin implements TfaValidationPluginInterface {
 
   public function getForm($form) {
     $form['code'] = array(

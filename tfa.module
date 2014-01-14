@@ -108,11 +108,12 @@ function tfa_get_context($account) {
 
     $api = module_invoke_all('tfa_api');
     // Add system plugins.
-    $login = variable_get('tfa_login_plugin', '');
-    // @todo support multiple login plugins
-    if (!empty($login) && array_key_exists($login, $api)) {
-      $context['plugins']['login'] = $api[$login]['class'];
+    foreach (variable_get('tfa_login_plugins', array()) as $key) {
+      if (array_key_exists($key, $api)) {
+        $context['plugins']['login'][] = $api[$key]['class'];
+      }
     }
+    // Add validate.
     $validate = variable_get('tfa_validate_plugin', '');
     if (!empty($validate) && array_key_exists($validate, $api)) {
       $context['plugins']['validate'] = $api[$validate]['class'];
@@ -171,6 +172,10 @@ function tfa_tfa_api() {
       'class' => 'TfaRecoveryCode',
       'name' => 'Recovery codes',
     ),
+    'tfa_role' => array(
+      'class' => 'TfaRole',
+      'name' => 'Admin role',
+    ),
   );
 }
 
@@ -206,9 +211,10 @@ function tfa_login_submit($form, &$form_state) {
   }
   elseif (!user_access('skip tfa', $account) && !tfa_login_allowed($account)) {
 
-    // Restart flood levels.
+    // Restart flood levels and session context.
     flood_clear_event('tfa_validate');
     flood_register_event('tfa_begin');
+    $_SESSION['tfa'] = array();
 
     $query = drupal_get_query_parameters();
     if (!empty($form_state['redirect'])) {
@@ -266,9 +272,10 @@ function tfa_user_login(&$edit, $account) {
   elseif (!user_access('skip tfa', $account) && !tfa_login_allowed($account)) {
     // User has been authenticated so force logout and redirect to TFA form.
     tfa_logout();
-    // Restart flood levels.
+    // Restart flood levels and session context.
     flood_clear_event('tfa_validate');
     flood_register_event('tfa_begin');
+    $_SESSION['tfa'] = array();
 
     // Hold onto destination and unset GET parameter.
     $query = drupal_get_query_parameters();

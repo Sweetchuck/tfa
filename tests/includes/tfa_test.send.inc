@@ -1,6 +1,6 @@
 <?php
 
-class TfaTestSend extends TfaBasePlugin implements TfaValidationPlugin, TfaSendPlugin {
+class TfaTestSend extends TfaBasePlugin implements TfaValidationPluginInterface, TfaSendPluginInterface {
 
   public function __construct(array $context = array()) {
     parent::__construct($context);

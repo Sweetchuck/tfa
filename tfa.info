@@ -7,5 +7,6 @@ files[] = tests/tfa.test
 
 files[] = tfa_email.inc
 files[] = tfa_deviceauth.inc
+files[] = tfa_role.inc
 files[] = tfa_recoverycode.inc
 files[] = tfa_totp.inc

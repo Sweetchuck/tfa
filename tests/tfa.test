@@ -36,6 +36,7 @@ class TfaTestCase extends DrupalWebTestCase {
       'name' => $account->name,
       'pass' => $account->pass_raw,
     );
+    // Not using drupalLogin() since it tests for actual login.
     $this->drupalPost('user', $edit, t('Log in'));
     // Get login hash. Could user tfa_login_hash() but would require reloading
     // account.
@@ -43,10 +44,11 @@ class TfaTestCase extends DrupalWebTestCase {
     $login_hash = array_pop($url_parts);
 
     // Check that TFA process has begun.
-    $this->assertText('Enter sent code', 'The send code input appears');
+    $this->assertNoLink('Log out', 'Logout link does not appear');
+    $this->assertFieldById('edit-code', '', 'The send code input appears');
     // Confirm no fallback button.
     $this->assertNoFieldById('edit-fallback', '', 'Fallback button does not appear');
-    $this->assertNoText('My account', 'Authenticated text does not appear');
+
     // Confirm validation error.
     $edit = array(
       'code' => $this->randomName(),
@@ -61,7 +63,7 @@ class TfaTestCase extends DrupalWebTestCase {
       'code' => $code,
     );
     $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, t('Submit'));
-    $this->assertText('My account', 'Authenticated text appears');
+    $this->assertLink('Log out', 0, 'Logout link appears');
 
     $this->drupalGet('user/logout');
 
@@ -97,7 +99,7 @@ class TfaTestCase extends DrupalWebTestCase {
       'recover' => 'FAILSAFE',
     );
     $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, t('Submit'));
-    $this->assertText('My account', 'Authenticated text appears');
+    $this->assertLink('Log out', 0, 'Logout link appears');
   }
 
   public function testFloodControl() {
@@ -163,11 +165,37 @@ class TfaTestCase extends DrupalWebTestCase {
       'code' => $code,
     );
     $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, t('Submit'), $options);
-    $this->assertText('My account', 'Authenticated text appears');
+    $this->assertLink('Log out', 0, 'Logout link appears');
     // Confirm user is on filter tips page.
     $this->assertText('Compose tips', 'Redirected page text appears');
 
     // @todo test one-time login redirection.
+  }
+
+  public function testLoginPlugins() {
+    variable_set('tfa_validate_plugin', 'tfa_test_send');
+    $code = $this->randomName();
+    // Enable login plugin.
+    variable_set('tfa_login_plugins', array('tfa_test_login'));
+
+    $account = $this->drupalCreateUser(array());
+
+    $edit = array(
+      'name' => $account->name,
+      'pass' => $account->pass_raw,
+    );
+    $this->drupalPost('user/login', $edit, t('Log in'));
+    $this->assertNoLink('Log out', 'Not authenticated');
+
+    // Set TfaTestLogin to allow login.
+    variable_set('tfa_test_login_uid', (string) $account->uid);
+    $edit = array(
+      'name' => $account->name,
+      'pass' => $account->pass_raw,
+    );
+    $this->drupalPost('user/login', $edit, t('Log in'));
+    $this->assertLink('Log out', 0, 'Authenticated');
+    $this->assertNoFieldById('edit-code', '', 'The send code input does not appear');
   }
 
   /**
@@ -181,9 +209,9 @@ class TfaTestCase extends DrupalWebTestCase {
       case 'fallback-button':
         return "Can't access your account?";
       case 'flood-validate':
-        return 'You have reached the threshold for incorrect code entry attempts. Please try again later.';
+        return 'You have reached the threshold for incorrect code entry attempts.';
       case 'flood-begin':
-        return 'You have reached the threshold for TFA attempts. Please try again later.';
+        return 'You have reached the threshold for TFA attempts.';
     }
   }
 }

@@ -23,13 +23,14 @@ function tfa_begin_form($uid) {
 function tfa_form($form, $form_state, $account) {
 
   // Check validation flood.
-  if (!flood_is_allowed('tfa_validate', variable_get('tfa_validate_threshold', 5))) {
-    drupal_set_message(t('You have reached the threshold for incorrect code entry attempts. Please try again later.'), 'error');
+  $window = variable_get('tfa_flood_window', 3600);
+  if (!variable_get('tfa_test_mode', 0) && !flood_is_allowed('tfa_validate', variable_get('tfa_validate_threshold', 5), $window)) {
+    drupal_set_message(t('You have reached the threshold for incorrect code entry attempts. Please try again in !time minutes.', array('!time' => $window / 60)), 'error');
     return drupal_access_denied();
   }
   // Check entire process flood.
-  elseif (!flood_is_allowed('tfa_begin', variable_get('tfa_begin_threshold', 3))) {
-    drupal_set_message(t('You have reached the threshold for TFA attempts. Please try again later.'), 'error');
+  elseif (!variable_get('tfa_test_mode', 0) && !flood_is_allowed('tfa_begin', variable_get('tfa_begin_threshold', 3), $window)) {
+    drupal_set_message(t('You have reached the threshold for TFA attempts. Please try again in !time minutes.', array('!time' => $window / 60)), 'error');
     return drupal_access_denied();
   }
 
@@ -51,10 +52,10 @@ function tfa_form($form, $form_state, $account) {
       '#limit_validation_errors' => array(),
     );
   }
-  // Set required UID element.
-  $form['uid'] = array(
+  // Set account element.
+  $form['account'] = array(
     '#type' => 'value',
-    '#value' => $account->uid,
+    '#value' => $account,
   );
 
   return $form;
@@ -70,7 +71,7 @@ function tfa_form_validate($form, &$form_state) {
   if (isset($form_state['values']['fallback']) && $form_state['values']['op'] === $form_state['values']['fallback']) {
     return;
   }
-  $account = user_load($form_state['values']['uid']);
+  $account = $form['account']['#value'];
   $tfa = tfa_get_process($account);
 
   if (!$tfa->validateForm($form_state)) {
@@ -89,8 +90,7 @@ function tfa_form_validate($form, &$form_state) {
  * multi-step if appropriate.
  */
 function tfa_form_submit($form, &$form_state) {
-  // @todo can form uid value be manipulated??
-  $account = user_load($form['uid']['#value']);
+  $account = $form['account']['#value'];
   $tfa = tfa_get_process($account);
   $tfa->submitForm($form_state);
 

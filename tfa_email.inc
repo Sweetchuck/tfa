@@ -1,6 +1,6 @@
 <?php
 
-class TfaEmail extends TfaBasePlugin implements TfaValidationPlugin, TfaSendPlugin {
+class TfaEmail extends TfaBasePlugin implements TfaValidationPluginInterface, TfaSendPluginInterface {
 
   public function getForm($form) {
     $form['code'] = array(
