@@ -11,7 +11,7 @@ function tfa_menu() {
   $items['system/tfa/%/%'] = array(
     'title' => 'Two-Factor Authentication',
     'page callback' => 'tfa_begin_form',
-    'page arguments' => array(2, 3),
+    'page arguments' => array(2),
     'access callback' => 'tfa_entry_access',
     'access arguments' => array(2, 3),
     'type' => MENU_CALLBACK,
@@ -31,13 +31,11 @@ function tfa_menu() {
 /**
  * Validate access to TFA code entry form.
  */
-function tfa_entry_access($uid, $check_hash) {
+function tfa_entry_access($uid, $url_hash) {
   // Generate a hash for this account.
   $account = user_load($uid);
   $hash = tfa_login_hash($account);
-  // Hash must be valid and the code must have been created within the day.
-  // @todo get something from context
-  return ($hash === $check_hash);// && !empty($code) && ($code['created'] > REQUEST_TIME - 86400);
+  return $hash === $url_hash;
 }
 
 /**
@@ -205,11 +203,11 @@ function tfa_login_submit($form, &$form_state) {
   $account = isset($form_state['uid']) ? user_load($form_state['uid']) : user_load_by_name($form_state['values']['name']);
   $tfa = tfa_get_process($account);
 
-  if (variable_get('tfa_required', 0) && !user_access('skip tfa', $account) && !$tfa->ready()) {
-    drupal_set_message(t('Login disallowed till your account is setup for TFA. Contact a site administrator.'), 'error');
+  if (variable_get('tfa_required', 0) && !tfa_login_complete($account) && !$tfa->ready() && !tfa_login_allowed($account)) {
+    drupal_set_message(t('Login disallowed. You are required to setup TFA. Please contact a site administrator.'), 'error');
     $form_state['redirect'] = 'user';
   }
-  elseif (!user_access('skip tfa', $account) && !tfa_login_allowed($account)) {
+  elseif (!tfa_login_complete($account) && $tfa->ready() && !tfa_login_allowed($account)) {
 
     // Restart flood levels and session context.
     flood_clear_event('tfa_validate');
@@ -239,14 +237,27 @@ function tfa_login_submit($form, &$form_state) {
 }
 
 /**
+ * Check if TFA process has completed so authentication should not be stopped.
+ *
+ * @param $account User account
+ * @return bool
+ */
+function tfa_login_complete($account) {
+  // TFA master login allowed switch is set by tfa_login().
+  if (isset($_SESSION['tfa'][$account->uid]['login']) && $_SESSION['tfa'][$account->uid]['login'] === TRUE) {
+    return TRUE;
+  }
+  return FALSE;
+}
+
+/**
  * Check if login should be interrupted for authenticating account.
  *
  * @param $account User account
  * @return bool
  */
 function tfa_login_allowed($account) {
-  // TFA master login allowed switch is set by tfa_login().
-  if (isset($_SESSION['tfa'][$account->uid]['login']) && $_SESSION['tfa'][$account->uid]['login'] === TRUE) {
+  if (user_access('skip tfa', $account)) {
     return TRUE;
   }
   // Check if login plugins will allow login.
@@ -264,12 +275,12 @@ function tfa_user_login(&$edit, $account) {
   }
 
   $tfa = tfa_get_process($account);
-  if (variable_get('tfa_required', 0) && !user_access('skip tfa', $account) && !$tfa->ready()) {
+  if (variable_get('tfa_required', 0) && !tfa_login_complete($account) && !$tfa->ready() && !tfa_login_allowed($account)) {
     tfa_logout();
-    drupal_set_message(t('Login disallowed till your account is setup for TFA. Contact a site administrator.'), 'error');
+    drupal_set_message(t('Login disallowed. You are required to setup TFA. Please contact a site administrator.'), 'error');
     drupal_goto('user');
   }
-  elseif (!user_access('skip tfa', $account) && !tfa_login_allowed($account)) {
+  elseif (!tfa_login_complete($account) && $tfa->ready() && !tfa_login_allowed($account)) {
     // User has been authenticated so force logout and redirect to TFA form.
     tfa_logout();
     // Restart flood levels and session context.
@@ -277,7 +288,7 @@ function tfa_user_login(&$edit, $account) {
     flood_register_event('tfa_begin');
     $_SESSION['tfa'] = array();
 
-    // Hold onto destination and unset GET parameter.
+    // Hold onto destination. It will be used in tfa_form_submit().
     $query = drupal_get_query_parameters();
     if (arg(0) == 'user' && arg(1) == 'reset') {
       // If one-time login reset destination and hold onto token.
@@ -286,6 +297,8 @@ function tfa_user_login(&$edit, $account) {
     }
     unset($_GET['destination']);
     $login_hash = tfa_login_hash($account);
+    // Use of $_GET['destination'] would allow other hooks to run but since the
+    // current user is no longer authenticated their context would be incorrect.
     drupal_goto('system/tfa/' . $account->uid . '/' . $login_hash, array('query' => $query));
   }
 }
@@ -357,7 +370,8 @@ function tfa_help($path, $arg) {
  * @return string Random hash.
  */
 function tfa_login_hash($account) {
+  // Using account login will mean this hash will become invalid once user has
+  // authenticated via TFA.
   $data = implode(':', array($account->name, $account->pass, $account->login));
-  // @todo include something from context
   return drupal_hash_base64($data);
 }

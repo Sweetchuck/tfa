@@ -151,7 +151,7 @@ function tfa_admin_settings($form, $form_state) {
     }
   }
 
-  // Enable login plugins. @todo make multi-select
+  // Enable login plugins.
   if (count($login_plugins) >= 1) {
     $form['tfa_login'] = array(
       '#type' => 'checkboxes',

@@ -7,6 +7,10 @@ class TfaTestSend extends TfaBasePlugin implements TfaValidationPluginInterface,
     $this->code = variable_get('tfa_test_code', 'TEST');
   }
 
+  public function ready() {
+    return variable_get('tfa_test_send_ready', TRUE);
+  }
+
   public function getForm($form) {
     $form['code'] = array(
       '#type' => 'textfield',

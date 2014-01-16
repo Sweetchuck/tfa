@@ -55,7 +55,6 @@ class Tfa {
     if (!empty($plugins['validate'])) {
       $this->validatePlugin = new $plugins['validate']($context);
     }
-    // @todo support multiple login plugins
     if (!empty($plugins['login'])) {
       foreach ($plugins['login'] as $class) {
         $this->loginPlugins[] = new $class($context);
