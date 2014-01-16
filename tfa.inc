@@ -9,14 +9,34 @@
  */
 class Tfa {
 
-  protected $plugins = array();
-  protected $plugin_info;
-  protected $account;
+  /**
+   * @var array
+   */
   protected $context;
-  protected $validatePlugin = NULL;
+
+  /**
+   * @var array
+   */
+  protected $validatePlugin;
+
+  /**
+   * @var array
+   */
   protected $loginPlugins = array();
+
+  /**
+   * @var array
+   */
   protected $fallbackPlugins = array();
+
+  /**
+   * @var bool
+   */
   protected $complete = FALSE;
+
+  /**
+   * @var bool
+   */
   protected $fallback = FALSE;
 
   /**
@@ -33,7 +53,7 @@ class Tfa {
    *   May include keys:
    *
    *     - 'login'
-   *       Class name of TfaPlugin implementing TfaLoginPlugin.
+   *       Array of classes of TfaPlugin implementing TfaLoginPlugin.
    *
    *     - 'fallback'
    *       Array of classes of TfaPlugin that can be used as fallback processes.
@@ -46,24 +66,32 @@ class Tfa {
    *     - 'uid'
    *       Account uid of user in TFA process.
    *
-   *   May include key:
-   *
-   *     - 'redirect'
-   *       String or array suitable for $form_state['redirect'].
    */
   public function __construct(array $plugins, array $context) {
-    if (!empty($plugins['validate'])) {
-      $this->validatePlugin = new $plugins['validate']($context);
+    if (empty($plugins['validate'])) {
+      // @todo throw exception?
     }
+
+    $this->validatePlugin = new $plugins['validate']($context);
     if (!empty($plugins['login'])) {
       foreach ($plugins['login'] as $class) {
         $this->loginPlugins[] = new $class($context);
       }
     }
     if (!empty($plugins['fallback'])) {
-      // @todo may not work since submitForm will need to check ready()
-      $this->fallbackPlugins = $plugins['fallback'];
-      $this->fallback = TRUE;
+      // @todo consider making plugin->ready a class method?
+      foreach ($plugins['fallback'] as $class) {
+        if ($class === $this->validatePlugin) {
+          continue; // Skip fallback if its same as validation.
+        }
+        $fallback = new $class($context);
+        if ($fallback->ready()) {
+          $this->fallbackPlugins = $class;
+        }
+      }
+      if (!empty($this->fallbackPlugins)) {
+        $this->fallback = TRUE;
+      }
     }
     $this->context = $context;
     $this->context['plugins'] = $plugins;
@@ -230,7 +258,8 @@ abstract class TfaBasePlugin {
    */
   public function __construct(array $context = array()) {
     $this->context = $context;
-    $this->codeLength = 6; // @todo
+    // Default code length is 6.
+    $this->codeLength = 6;
   }
 
   /**

@@ -41,7 +41,7 @@ class TfaEmail extends TfaBasePlugin implements TfaValidationPluginInterface, Tf
   }
 
   public function validateForm(&$form_state) {
-    $this->code = variable_get('tfa_test', '3lk2jf3');
+    $this->code = variable_get('tfa_test', 'code');
     if (!parent::validate($form_state['values']['code'])) {
       $this->errorMessages['code'] = t('Invalid code.');
       return FALSE;

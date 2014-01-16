@@ -1,5 +1,5 @@
 name = "Two-factor Authentication (TFA)"
-description = Pluggable provider of second factor authentication
+description = Pluggable provider of second factor authentication for Drupal
 core = 7.x
 
 files[] = tfa.inc

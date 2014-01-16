@@ -106,46 +106,56 @@ function tfa_form_submit($form, &$form_state) {
     $context = tfa_get_context($account);
     $tfa->finalize();
     tfa_login($account);
-
     // Set redirect based on query parameters, existing $form_state or context.
-    $query = drupal_get_query_parameters();
-    $options = array();
-    $destination = 'user';
-    if (!empty($query['pass-reset-token'])) {
-      // If pass-reset-token was set then complete final process interrupted
-      // from user_pass_reset().
-      watchdog('tfa', 'User %name used one-time login link', array('%name' => $account->name));
-      drupal_set_message(t('You have just used your one-time login link. It is no longer necessary to use this link to log in. Please change your password.'));
-      // Let the user's password be changed without the current password check.
-      $token = drupal_random_key();
-      $_SESSION['pass_reset_' . $account->uid] = $token;
-      $query['pass-reset-token'] = $token;
-    }
-    if (!empty($form_state['redirect'])) {
-      if (is_array($form_state['redirect'])) {
-        $destination = $form_state['redirect'][0];
-        $options = $form_state['redirect'][1];
-      }
-      else {
-        $destination = $form_state['redirect'];
-      }
-    }
-    if (!empty($query['destination'])) {
-      $destination = $query['destination'];
-      unset($query['destination']);
-      unset($_GET['destination']);
-    }
-    // Context redirect takes final precedence.
-    if (!empty($context['redirect'])) {
-      if (is_array($context['redirect'])) {
-        $destination = $context['redirect'][0];
-        $options = $context['redirect'][1];
-      }
-      else {
-        $destination = $context['redirect'];
-      }
-    }
-    $options = array_merge($options, array('query' => $query));
-    $form_state['redirect'] = array($destination, $options);
+    $form_state['redirect'] = _tfa_form_get_destination($context, $form_state);
   }
+}
+
+/**
+ * Get destination and options for $form_state['redirect'].
+ *
+ * @param array $context TFA account context
+ * @param array $form_state Form API state array from tfa_form_submit()
+ * @return array
+ */
+function _tfa_form_get_destination($context, $form_state) {
+  $query = drupal_get_query_parameters();
+  $options = array();
+  $destination = 'user';
+  if (!empty($query['pass-reset-token'])) {
+    // If pass-reset-token was set then complete final process interrupted
+    // from user_pass_reset().
+    watchdog('tfa', 'User %name used one-time login link', array('%name' => $account->name));
+    drupal_set_message(t('You have just used your one-time login link. It is no longer necessary to use this link to log in. Please change your password.'));
+    // Let the user's password be changed without the current password check.
+    $token = drupal_random_key();
+    $_SESSION['pass_reset_' . $account->uid] = $token;
+    $query['pass-reset-token'] = $token;
+  }
+  if (!empty($form_state['redirect'])) {
+    if (is_array($form_state['redirect'])) {
+      $destination = $form_state['redirect'][0];
+      $options = $form_state['redirect'][1];
+    }
+    else {
+      $destination = $form_state['redirect'];
+    }
+  }
+  if (!empty($query['destination'])) {
+    $destination = $query['destination'];
+    unset($query['destination']);
+    unset($_GET['destination']);
+  }
+  // Context redirect takes final precedence.
+  if (!empty($context['redirect'])) {
+    if (is_array($context['redirect'])) {
+      $destination = $context['redirect'][0];
+      $options = $context['redirect'][1];
+    }
+    else {
+      $destination = $context['redirect'];
+    }
+  }
+  $options = array_merge($options, array('query' => $query));
+  return array($destination, $options);
 }

@@ -202,7 +202,7 @@ class TfaTestCase extends DrupalWebTestCase {
     variable_set('tfa_validate_plugin', 'tfa_test_send');
     $account = $this->drupalCreateUser(array());
 
-    // Enable not ready state.
+    // Disable ready.
     variable_set('tfa_test_send_ready', FALSE);
 
     $edit = array(

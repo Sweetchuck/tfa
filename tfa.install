@@ -5,36 +5,6 @@
  */
 
 /**
- * Implements hook_schema().
- */
-function tfa_schema() {
-  $schema['tfa'] = array(
-    'fields' => array(
-      'uid' => array(
-        'type' => 'int',
-        'unsigned' => TRUE,
-        'not null' => TRUE,
-        'default' => 0,
-      ),
-      'plugin' => array(
-        'type' => 'varchar',
-        'length' => 32,
-        'not null' => TRUE,
-        'default' => '',
-      ),
-      'created' => array(
-        'type' => 'int',
-        'not null' => TRUE,
-        'default' => 0,
-      )
-    ),
-    'primary key' => array('uid'),
-  );
-
-  return $schema;
-}
-
-/**
  * Implements hook_uninstall().
  */
 function tfa_uninstall() {
