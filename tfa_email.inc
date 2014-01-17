@@ -9,11 +9,11 @@ class TfaEmail extends TfaBasePlugin implements TfaValidationPluginInterface, Tf
       '#required' => TRUE,
       '#description' => t('Enter @length-character code sent to your device.', array('@length' => $this->codeLength)),
     );
-    $form['login'] = array(
+    $form['actions']['login'] = array(
       '#type' => 'submit',
       '#value' => t('Verify'),
     );
-    $form['resend'] = array(
+    $form['actions']['resend'] = array(
       '#type' => 'submit',
       '#value' => t('Resend'),
       '#submit' => array('tfa_form_submit'),

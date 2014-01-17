@@ -195,16 +195,20 @@ function tfa_login_submit($form, &$form_state) {
     flood_clear_event('tfa_validate');
     flood_register_event('tfa_begin');
     $_SESSION['tfa'] = array();
+    $context = tfa_get_context($account);
 
     $query = drupal_get_query_parameters();
     if (!empty($form_state['redirect'])) {
       // If there's an existing redirect set it in TFA context and
       // tfa_form_submit() will extract and set once process is complete.
-      $context = tfa_get_context($account);
       $context['redirect'] = $form_state['redirect'];
-      tfa_set_context($account, $context);
+
     }
     unset($_GET['destination']);
+
+    // @todo get plugin context
+
+    tfa_set_context($account, $context);
 
     $login_hash = tfa_login_hash($account);
     $form_state['redirect'] = array(
@@ -233,7 +237,7 @@ function tfa_login_complete($account) {
 }
 
 /**
- * Check if login should be interrupted for authenticating account.
+ * Check TFA plugins if login should be interrupted for authenticating account.
  *
  * @param $account User account
  * @return bool

@@ -7,7 +7,7 @@
 /**
  * Start of TFA process form.
  *
- * @param  string $uid User account ID
+ * @param string $uid User account ID
  */
 function tfa_begin_form($uid) {
   $account = user_load($uid);
@@ -22,7 +22,7 @@ function tfa_begin_form($uid) {
  */
 function tfa_form($form, $form_state, $account) {
 
-  // Check validation flood.
+  // Check validation flood so long as test mode is not active.
   $window = variable_get('tfa_flood_window', 3600);
   if (!variable_get('tfa_test_mode', 0) && !flood_is_allowed('tfa_validate', variable_get('tfa_validate_threshold', 5), $window)) {
     drupal_set_message(t('You have reached the threshold for incorrect code entry attempts. Please try again in !time minutes.', array('!time' => $window / 60)), 'error');
@@ -41,15 +41,16 @@ function tfa_form($form, $form_state, $account) {
     tfa_set_context($account, $form_state['storage']['tfa_context']);
     $tfa = tfa_get_process($account);
   }
-  // Begin process.
   $tfa->begin();
+  // Get TFA plugins form.
   $form = $tfa->getForm($form);
   if ($tfa->hasFallback()) {
-    $form['fallback'] = array(
+    $form['actions']['fallback'] = array(
       '#type' => 'submit',
       '#value' => t("Can't access your account?"),
       '#submit' => array('tfa_form_submit'),
       '#limit_validation_errors' => array(),
+      '#weight' => 20,
     );
   }
   // Set account element.

@@ -82,7 +82,7 @@ class Tfa {
       // @todo consider making plugin->ready a class method?
       foreach ($plugins['fallback'] as $class) {
         if ($class === $this->validatePlugin) {
-          continue; // Skip fallback if its same as validation.
+          continue; // Skip this fallback if its same as validation.
         }
         $fallback = new $class($context);
         if ($fallback->ready()) {
@@ -130,7 +130,16 @@ class Tfa {
    * @return array Form API array.
    */
   public function getForm() {
-    return $this->validatePlugin->getForm(array());
+    $form = $this->validatePlugin->getForm(array());
+    // Allow login plugins to modify form.
+    if (!empty($this->loginPlugins)) {
+      foreach ($this->loginPlugins as $class) {
+        if (method_exists($class, 'getForm')) {
+          $form = $class->getForm($form);
+        }
+      }
+    }
+    return $form;
   }
 
   /**
@@ -169,6 +178,14 @@ class Tfa {
     // Otherwise invoke plugin submitForm().
     elseif (method_exists($this->validatePlugin, 'submitForm')) {
       $this->validatePlugin->submitForm($form_state);
+    }
+    // Allow login plugins to handle form submit.
+    if (!empty($this->loginPlugins)) {
+      foreach ($this->loginPlugins as $class) {
+        if (method_exists($class, 'submitForm')) {
+          $class->submitForm($form_state);
+        }
+      }
     }
     // Check if plugin is complete.
     $this->complete = $this->validatePlugin->complete();
@@ -224,9 +241,17 @@ class Tfa {
    * Run TFA process finalization.
    */
   public function finalize() {
-    // Delete code if necessary
+    // Invoke plugin finalize.
     if (method_exists($this->validatePlugin, 'finalize')) {
       $this->validatePlugin->finalize();
+    }
+    // Allow login plugins to act during finalization.
+    if (!empty($this->loginPlugins)) {
+      foreach ($this->loginPlugins as $class) {
+        if (method_exists($class, 'finalize')) {
+          $class->finalize();
+        }
+      }
     }
   }
 

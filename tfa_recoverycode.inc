@@ -14,7 +14,7 @@ class TfaRecoveryCode extends TfaBasePlugin implements TfaValidationPluginInterf
       '#required' => TRUE,
       '#description' => t('These recovery codes were generated when you first setup TFA.'),
     );
-    $form['login'] = array(
+    $form['actions']['login'] = array(
       '#type' => 'submit',
       '#value' => t('Submit'),
     );
