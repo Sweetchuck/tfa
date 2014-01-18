@@ -11,7 +11,7 @@ class TfaDeviceAuth extends TfaBasePlugin implements TfaLoginPluginInterface {
     return FALSE;
   }
 
-  public function getForm($form) {
+  public function getForm(array $form, array &$form_state) {
     $form['remember_me'] = array(
       '#type' => 'checkbox',
       '#title' => t('Trust this device?'),
@@ -19,7 +19,7 @@ class TfaDeviceAuth extends TfaBasePlugin implements TfaLoginPluginInterface {
     return $form;
   }
 
-  public function submitForm($form_state) {
+  public function submitForm(array $form, array &$form_state) {
     if (isset($form_state['values']['remember_me']) && $form_state['values']['remember_me']) {
       $this->trust = TRUE;
     }

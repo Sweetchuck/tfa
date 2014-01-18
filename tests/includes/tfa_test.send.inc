@@ -11,17 +11,17 @@ class TfaTestSend extends TfaBasePlugin implements TfaValidationPluginInterface,
     return variable_get('tfa_test_send_ready', TRUE);
   }
 
-  public function getForm($form) {
+  public function getForm(array $form, array &$form_state) {
     $form['code'] = array(
       '#type' => 'textfield',
       '#title' => t('Enter sent code'),
       '#required' => TRUE,
     );
-    $form['login'] = array(
+    $form['actions']['login'] = array(
       '#type' => 'submit',
       '#value' => t('Submit'),
     );
-    $form['resend'] = array(
+    $form['actions']['resend'] = array(
       '#type' => 'submit',
       '#value' => t('Resend'),
       '#submit' => array('tfa_form_submit'),
@@ -31,7 +31,7 @@ class TfaTestSend extends TfaBasePlugin implements TfaValidationPluginInterface,
     return $form;
   }
 
-  public function validateForm(&$form_state) {
+  public function validateForm(array $form, array &$form_state) {
     if (!parent::validate($form_state['values']['code'])) {
       $this->errorMessages['code'] = t('Invalid sent code');
       return FALSE;
@@ -41,16 +41,64 @@ class TfaTestSend extends TfaBasePlugin implements TfaValidationPluginInterface,
     }
   }
 
-  public function submitForm($form_state) {
+  public function submitForm(array $form, array &$form_state) {
     if ($form_state['values']['op'] === $form_state['values']['resend']) {
       drupal_set_message('Code resent');
+      return FALSE;
     }
     else {
-      parent::submitForm($form_state);
+      return parent::submitForm($form, $form_state);
     }
   }
 
-  public function send() {
-    // Do nothing.
+  public function begin() {
+    // Do nothing. A real plugin should send code to the user.
+  }
+}
+
+class TfaTestSendSetup extends TfaTestSend implements TfaSetupPluginInterface {
+
+  public function getSetupForm(array $form, array &$form_state) {
+    if (empty($form_state['storage']['location'])) {
+      $form['location'] = array(
+        '#type' => 'textfield',
+        '#title' => t('Location to send code'),
+        '#required' => TRUE,
+      );
+      $form['actions']['submit'] = array(
+        '#type' => 'submit',
+        '#value' => t('Submit'),
+      );
+    }
+    else {
+      // Include code entry form.
+      $form = $this->getForm($form, $form_state);
+    }
+    return $form;
+  }
+
+  public function validateSetupForm(array $form, array &$form_state) {
+    if (!empty($form_state['values']['code']) && !$this->validate($form_state['values']['code'])) {
+      $this->errorMessages['code'] = t('Invalid code. Please try again.');
+      return FALSE;
+    }
+    else {
+      return TRUE;
+    }
+  }
+
+  public function submitSetupForm(array $form, array &$form_state) {
+    if (!empty($form_state['values']['location'])) {
+      // Code would be sent to $form_state['values']['location']
+      $form_state['storage']['location'] = $form_state['values']['location'];
+      return FALSE;
+    }
+    else {
+      // Replace test code.
+      variable_set('tfa_test_code', $form_state['storage']['location']);
+      // Location would be saved.
+      return TRUE;
+    }
+
   }
 }

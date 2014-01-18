@@ -15,7 +15,7 @@ class Tfa {
   protected $context;
 
   /**
-   * @var array
+   * @var TfaBasePlugin
    */
   protected $validatePlugin;
 
@@ -48,15 +48,15 @@ class Tfa {
    *   Must include key:
    *
    *     - 'validate'
-   *       Class name of TfaPlugin implementing TfaValidationPlugin.
+   *       Class name of TfaBasePlugin implementing TfaValidationPluginInterface.
    *
    *   May include keys:
    *
    *     - 'login'
-   *       Array of classes of TfaPlugin implementing TfaLoginPlugin.
+   *       Array of classes of TfaBasePlugin implementing TfaLoginPluginInterface.
    *
    *     - 'fallback'
-   *       Array of classes of TfaPlugin that can be used as fallback processes.
+   *       Array of classes of TfaBasePlugin that can be used as fallback processes.
    *
    * @param array $context
    *   Context of TFA process.
@@ -80,8 +80,9 @@ class Tfa {
     }
     if (!empty($plugins['fallback'])) {
       // @todo consider making plugin->ready a class method?
-      foreach ($plugins['fallback'] as $class) {
-        if ($class === $this->validatePlugin) {
+      foreach ($plugins['fallback'] as $key => $class) {
+        if ($class === $plugins['validate']) {
+          unset($plugins['fallback'][$key]);
           continue; // Skip this fallback if its same as validation.
         }
         $fallback = new $class($context);
@@ -127,15 +128,17 @@ class Tfa {
   /**
    * Get TFA process form from plugin.
    *
+   * @param array $form
+   * @param array $form_state
    * @return array Form API array.
    */
-  public function getForm() {
-    $form = $this->validatePlugin->getForm(array());
+  public function getForm(array $form, array &$form_state) {
+    $form = $this->validatePlugin->getForm($form, $form_state);
     // Allow login plugins to modify form.
     if (!empty($this->loginPlugins)) {
       foreach ($this->loginPlugins as $class) {
         if (method_exists($class, 'getForm')) {
-          $form = $class->getForm($form);
+          $form = $class->getForm($form, $form_state);
         }
       }
     }
@@ -145,11 +148,12 @@ class Tfa {
   /**
    * Validate form.
    *
-   * @param array $code
+   * @param array $form
+   * @param array $form_state
    * @return bool
    */
-  public function validateForm(&$form_state) {
-    return $this->validatePlugin->validateForm($form_state);
+  public function validateForm(array $form, array &$form_state) {
+    return $this->validatePlugin->validateForm($form, $form_state);
   }
 
   /**
@@ -162,42 +166,45 @@ class Tfa {
   }
 
   /**
-   * [submitForm description]
-   * @param  [type] $form_state [description]
-   * @return [type]             [description]
+   *
+   *
+   * @param array $form
+   * @param array $form_state
+   * @return bool
    */
-  public function submitForm(&$form_state) {
+  public function submitForm(array $form, array &$form_state) {
     // Handle fallback if set.
     if ($this->fallback && isset($form_state['values']['fallback']) && $form_state['values']['op'] === $form_state['values']['fallback']) {
-      // Change context to next fallback.
+      // Change context to next fallback and reset validatePlugin.
       $this->context['plugins']['validate'] = array_shift($this->context['plugins']['fallback']);
+      $this->validatePlugin = new $this->context['plugins']['validate']($this->context);
       if (empty($this->context['plugins']['fallback'])) {
         $this->fallback = FALSE;
       }
     }
     // Otherwise invoke plugin submitForm().
     elseif (method_exists($this->validatePlugin, 'submitForm')) {
-      $this->validatePlugin->submitForm($form_state);
+      // Check if plugin is complete.
+      $this->complete = $this->validatePlugin->submitForm($form, $form_state);
     }
     // Allow login plugins to handle form submit.
     if (!empty($this->loginPlugins)) {
       foreach ($this->loginPlugins as $class) {
         if (method_exists($class, 'submitForm')) {
-          $class->submitForm($form_state);
+          $class->submitForm($form, $form_state);
         }
       }
     }
-    // Check if plugin is complete.
-    $this->complete = $this->validatePlugin->complete();
+    return $this->complete;
   }
 
   /**
    * Begin the TFA process.
    */
   public function begin() {
-    // Invoke send method on send validation plugins.
-    if (method_exists($this->validatePlugin, 'send')) {
-      $code = $this->validatePlugin->send();
+    // Invoke begin method on send validation plugins.
+    if (method_exists($this->validatePlugin, 'begin')) {
+      $code = $this->validatePlugin->begin();
     }
   }
 
@@ -216,25 +223,11 @@ class Tfa {
    * @return array
    */
   public function getContext() {
+    if (method_exists($this->validatePlugin, 'getPluginContext')) {
+      $pluginContext = $this->validatePlugin->getPluginContext();
+      $this->context['validate_context'] = $pluginContext;
+    }
     return $this->context;
-  }
-
-  /**
-   * Whether the TFA process is complete.
-   *
-   * @return bool
-   */
-  public function processComplete() {
-    return $this->complete;
-  }
-
-  /**
-   * Whether the TFA process is valid.
-   *
-   * @return bool
-   */
-  public function valid() {
-    return $this->validatePlugin->valid();
   }
 
   /**
@@ -258,16 +251,127 @@ class Tfa {
 }
 
 /**
+ * Class TfaSetup
+ */
+class TfaSetup {
+
+  /**
+   * @var TfaBasePlugin
+   */
+  protected $setupPlugin;
+
+  /**
+   * TFA Setup constructor.
+   *
+   * @param array $plugins
+   *   Plugins to instansiate.
+   *
+   *   Must include key:
+   *
+   *     - 'setup'
+   *       Class name of TfaBasePlugin implementing TfaSetupPluginInterface.
+   *
+   * @param array $context
+   *   Context of TFA process.
+   *
+   *   Must include key:
+   *
+   *     - 'uid'
+   *       Account uid of user in TFA process.
+   *
+   */
+  public function __construct(array $plugins, array $context) {
+    if (empty($plugins['setup'])) {
+      // @todo throw exception?
+    }
+    $this->setupPlugin = new $plugins['setup']($context);
+    $this->context = $context;
+    $this->context['plugins'] = $plugins;
+  }
+
+  /**
+   * Get plugin form.
+   *
+   * @param array $form
+   * @param array $form_state
+   * @return array
+   */
+  public function getForm(array $form, array &$form_state) {
+    return $this->setupPlugin->getSetupForm($form, $form_state);
+  }
+
+  /**
+   * Validate form.
+   *
+   * @param array $form
+   * @param array $form_state
+   * @return bool
+   */
+  public function validateForm(array $form, array &$form_state) {
+    return $this->setupPlugin->validateSetupForm($form, $form_state);
+  }
+
+  /**
+   * Return process error messages.
+   *
+   * @return array
+   */
+  public function getErrorMessages() {
+    return $this->setupPlugin->getErrorMessages();
+  }
+
+  /**
+   *
+   *
+   * @param array $form
+   * @param array $form_state
+   * @return bool
+   */
+  public function submitForm(array $form, array &$form_state) {
+    return $this->setupPlugin->submitSetupForm($form, $form_state);
+  }
+
+  /**
+   *
+   * @return array
+   */
+  public function getContext() {
+    if (method_exists($this->setupPlugin, 'getPluginContext')) {
+      $pluginContext = $this->setupPlugin->getPluginContext();
+      $this->context['setup_context'] = $pluginContext;
+    }
+    return $this->context;
+  }
+}
+
+/**
  * Base plugin class.
  */
 abstract class TfaBasePlugin {
 
+  /**
+   * @var string
+   */
   protected $code;
+
+  /**
+   * @var int
+   */
   protected $codeLength;
+
+  /**
+   * @var array
+   */
   protected $context;
-  protected $complete = FALSE;
-  protected $valid = FALSE;
+
+  /**
+   * @var array
+   */
   protected $errorMessages = array();
+
+  /**
+   * @var string
+   */
   protected $encryptionKey;
 
   /**
@@ -280,6 +384,14 @@ abstract class TfaBasePlugin {
    *
    *     - 'uid'
    *       Account uid of user in TFA process.
+   *
+   *   May include keys:
+   *
+   *     - 'validate_context'
+   *       Plugin-specific context for use during Tfa validation.
+   *
+   *     - 'setup_context'
+   *       Plugin-specific context for use during TfaSetup.
    */
   public function __construct(array $context = array()) {
     $this->context = $context;
@@ -308,29 +420,12 @@ abstract class TfaBasePlugin {
   /**
    * Submit form.
    *
+   * @param array $form
    * @param array $form_state
-   * @return bool Whether form passes validation or not
-   */
-  public function submitForm($form_state) {
-    $this->complete = TRUE;
-  }
-
-  /**
-   * Whether the plugin's code processing is valid.
-   *
    * @return bool
    */
-  public function valid() {
-    return $this->valid;
-  }
-
-  /**
-   * Whether the plugin's processing is complete.
-   *
-   * @return bool
-   */
-  public function complete() {
-    return $this->complete;
+  public function submitForm(array $form, array &$form_state) {
+    return TRUE;
   }
 
   /**
@@ -341,12 +436,11 @@ abstract class TfaBasePlugin {
    */
   protected function validate($code) {
     if ((string) $code === (string) $this->code) {
-      $this->valid = TRUE;
+      return TRUE;
     }
     else {
-      $this->valid = FALSE;
+      return FALSE;
     }
-    return $this->valid;
   }
 
   /**
@@ -415,9 +509,9 @@ abstract class TfaBasePlugin {
 }
 
 /**
- * Interface TfaValidationPlugin
+ * Interface TfaValidationPluginInterface
  *
- * Validation plugins interact with the TFA form processes to provide code entry
+ * Validation plugins interact with the Tfa form processes to provide code entry
  * and validate submitted codes.
  */
 interface TfaValidationPluginInterface {
@@ -425,24 +519,26 @@ interface TfaValidationPluginInterface {
   /**
    * Get TFA process form from plugin.
    *
-   * @param array Existing form.
+   * @param array $form
+   * @param array $form_state
    * @return array Form API array.
    */
-  public function getForm($form);
+  public function getForm(array $form, array &$form_state);
 
   /**
    * Validate form.
    *
+   * @param array $form
    * @param array $form_state
    * @return bool Whether form passes validation or not
    */
-  public function validateForm(&$form_state);
+  public function validateForm(array $form, array &$form_state);
 }
 
 /**
- * Interface TfaLoginPlugin
+ * Interface TfaLoginPluginInterface
  *
- * Login plugins interact with the TFA loginAllowed() process prior to starting
+ * Login plugins interact with the Tfa loginAllowed() process prior to starting
  * a TFA process.
  */
 interface TfaLoginPluginInterface {
@@ -456,9 +552,9 @@ interface TfaLoginPluginInterface {
 }
 
 /**
- * Interface TfaSendPlugin
+ * Interface TfaSendPluginInterface
  *
- * Send plugins interact with the TFA begin() process to communicate a code
+ * Send plugins interact with the Tfa begin() process to communicate a code
  * during the start of the TFA process.
  *
  * Implementations of a send plugin should also be a validation plugin.
@@ -466,7 +562,36 @@ interface TfaLoginPluginInterface {
 interface TfaSendPluginInterface {
 
   /**
-   * Transfer code.
+   * TFA process begin.
    */
-  public function send();
+  public function begin();
+}
+
+/**
+ * Interface TfaSetupPluginInterface
+ *
+ * Setup plugins are used by TfaSetup for configuring a plugin.
+ *
+ * Implementations of a begin plugin should also be a validation plugin.
+ */
+interface TfaSetupPluginInterface {
+
+  /**
+   * @param array $form
+   * @param array $form_state
+   */
+  public function getSetupForm(array $form, array &$form_state);
+
+  /**
+   * @param array $form
+   * @param array $form_state
+   */
+  public function validateSetupForm(array $form, array &$form_state);
+
+  /**
+   * @param array $form
+   * @param array $form_state
+   * @return bool
+   */
+  public function submitSetupForm(array $form, array &$form_state);
 }

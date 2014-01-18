@@ -6,6 +6,24 @@
  */
 
 /**
+ * Implements hook_menu().
+ */
+function tfa_test_menu() {
+  $items = array();
+
+  // Add local task for setting up test send plugin.
+  $items['user/%user/tfa'] = array(
+    'title' => 'TFA Setup',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('tfa_test_setup_form', 1),
+    'access callback' => 'user_edit_access',
+    'access arguments' => array(1),
+    'type' => MENU_LOCAL_TASK,
+  );
+  return $items;
+}
+
+/**
  * Implements hook_tfa_api().
  */
 function tfa_test_tfa_api() {
@@ -28,4 +46,64 @@ function tfa_test_tfa_api() {
       'name' => 'Fallback test',
     ),
   );
+}
+
+/**
+ * The multi-step form builder for TfaSetup().
+ */
+function tfa_test_setup_form($form, &$form_state, $account) {
+
+  if (empty($form_state['storage'])) {
+    $form['start'] = array(
+      '#type' => 'submit',
+      '#value' => t('Setup send'),
+    );
+  }
+  else {
+    $tfaSetup = $form_state['storage']['tfa_setup'];
+    $form = $tfaSetup->getForm($form, $form_state);
+  }
+  // Set account element.
+  $form['account'] = array(
+    '#type' => 'value',
+    '#value' => $account,
+  );
+  return $form;
+}
+
+function tfa_test_setup_form_validate($form, &$form_state) {
+  if (empty($form_state['storage'])) {
+    return;
+  }
+  $tfaSetup = $form_state['storage']['tfa_setup'];
+  if (!$tfaSetup->validateForm($form, $form_state)) {
+    foreach ($tfaSetup->getErrorMessages() as $element => $message) {
+      form_set_error($element, $message);
+    }
+  }
+}
+
+function tfa_test_setup_form_submit($form, &$form_state) {
+  $account = $form['account']['#value'];
+
+  if (empty($form_state['storage'])) {
+    // Unlike the standard Tfa process and tfa_form(). TfaSetup can use
+    // $form_state storage to persist user context.
+    $class = variable_get('tfa_test_setup_class', '');
+    $tfaSetup = new TfaSetup(array('setup' => $class), array('uid' => $account->uid));
+
+    $form_state['storage']['tfa_setup'] = $tfaSetup;
+    $form_state['rebuild'] = TRUE;
+  }
+  elseif (!empty($form_state['storage']['tfa_setup'])) {
+    $tfaSetup = $form_state['storage']['tfa_setup'];
+    if ($tfaSetup->submitForm($form, $form_state)) {
+      drupal_set_message('Setup complete');
+      $form_state['redirect'] = 'user';
+    }
+    else {
+      // Setup isn't complete so rebuild.
+      $form_state['rebuild'] = TRUE;
+    }
+  }
 }

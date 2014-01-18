@@ -14,7 +14,6 @@ function tfa_begin_form($uid) {
 
   return drupal_get_form('tfa_form', $account);
 }
-
 /**
  * Main TFA process form builder.
  *
@@ -22,28 +21,14 @@ function tfa_begin_form($uid) {
  */
 function tfa_form($form, $form_state, $account) {
 
-  // Check validation flood so long as test mode is not active.
-  $window = variable_get('tfa_flood_window', 3600);
-  if (!variable_get('tfa_test_mode', 0) && !flood_is_allowed('tfa_validate', variable_get('tfa_validate_threshold', 5), $window)) {
-    drupal_set_message(t('You have reached the threshold for incorrect code entry attempts. Please try again in !time minutes.', array('!time' => $window / 60)), 'error');
-    return drupal_access_denied();
-  }
-  // Check entire process flood.
-  elseif (!variable_get('tfa_test_mode', 0) && !flood_is_allowed('tfa_begin', variable_get('tfa_begin_threshold', 3), $window)) {
-    drupal_set_message(t('You have reached the threshold for TFA attempts. Please try again in !time minutes.', array('!time' => $window / 60)), 'error');
+  // Check flood tables.
+  if (_tfa_hit_flood()) {
     return drupal_access_denied();
   }
 
-  if (empty($form_state['storage']['tfa_context'])) {
-    $tfa = tfa_get_process($account);
-  }
-  else {
-    tfa_set_context($account, $form_state['storage']['tfa_context']);
-    $tfa = tfa_get_process($account);
-  }
-  $tfa->begin();
+  $tfa = tfa_get_process($account);
   // Get TFA plugins form.
-  $form = $tfa->getForm($form);
+  $form = $tfa->getForm($form, $form_state);
   if ($tfa->hasFallback()) {
     $form['actions']['fallback'] = array(
       '#type' => 'submit',
@@ -75,7 +60,7 @@ function tfa_form_validate($form, &$form_state) {
   $account = $form['account']['#value'];
   $tfa = tfa_get_process($account);
 
-  if (!$tfa->validateForm($form_state)) {
+  if (!$tfa->validateForm($form, $form_state)) {
     foreach ($tfa->getErrorMessages() as $element => $message) {
       form_set_error($element, $message);
     }
@@ -93,14 +78,16 @@ function tfa_form_validate($form, &$form_state) {
 function tfa_form_submit($form, &$form_state) {
   $account = $form['account']['#value'];
   $tfa = tfa_get_process($account);
-  $tfa->submitForm($form_state);
 
-  if (!$tfa->processComplete()) {
-    // Store TFA context for form rebuild.
-    $form_state['storage']['tfa_context'] = $tfa->getContext();
-    $form_state['rebuild'] = TRUE;
+  if (!$tfa->submitForm($form, $form_state)) {
+    // If fallback was triggered TFA process has been reset to new validate
+    // plugin so run begin and store new context.
+    $tfa->begin();
+    $context = $tfa->getContext();
+    tfa_set_context($account, $context);
     // Clear validation flood.
     flood_clear_event('tfa_validate');
+    $form_state['rebuild'] = TRUE;
   }
   else {
     // TFA process is complete so finalize and authenticate user.
@@ -159,4 +146,26 @@ function _tfa_form_get_destination($context, $form_state) {
   }
   $options = array_merge($options, array('query' => $query));
   return array($destination, $options);
+}
+
+/**
+ * Check if flood has been hit.
+ *
+ * @return bool
+ */
+function _tfa_hit_flood() {
+  if (variable_get('tfa_test_mode', 0)) {
+    return FALSE;
+  }
+  $window = variable_get('tfa_flood_window', 3600);
+  if (!flood_is_allowed('tfa_validate', variable_get('tfa_validate_threshold', 5), $window)) {
+    drupal_set_message(t('You have reached the threshold for incorrect code entry attempts. Please try again in !time minutes.', array('!time' => $window / 60)), 'error');
+    return TRUE;
+  }
+  // Check entire process flood.
+  elseif (!flood_is_allowed('tfa_begin', variable_get('tfa_begin_threshold', 3), $window)) {
+    drupal_set_message(t('You have reached the threshold for TFA attempts. Please try again in !time minutes.', array('!time' => $window / 60)), 'error');
+    return TRUE;
+  }
+  return FALSE;
 }

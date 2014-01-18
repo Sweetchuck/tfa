@@ -17,6 +17,7 @@ function tfa_menu() {
     'type' => MENU_CALLBACK,
     'file' => 'tfa.form.inc',
   );
+
   $items['admin/config/people/tfa'] = array(
     'title' => 'Two-factor Authentication',
     'description' => 'TFA process settings',
@@ -35,7 +36,8 @@ function tfa_entry_access($uid, $url_hash) {
   // Generate a hash for this account.
   $account = user_load($uid);
   $hash = tfa_login_hash($account);
-  return $hash === $url_hash;
+  $context = tfa_get_context($account);
+  return $hash === $url_hash && !empty($context) && $context['uid'] === $account->uid;
 }
 
 /**
@@ -58,9 +60,10 @@ function tfa_permission() {
 
 /**
  * Set context for account's TFA process.
+ *
  * @param $account User account
  * @param array $context Context array
- *   @see tfa_get_context for format
+ *   @see tfa_start_context() for context format
  */
 function tfa_set_context($account, $context) {
   $_SESSION['tfa'][$account->uid] = $context;
@@ -74,56 +77,78 @@ function tfa_set_context($account, $context) {
  *
  * @param $account User account
  * @return array
- *   array(
- *     'uid' => 9,
- *     'plugins' => array(
- *       'login' => 'TfaMyLoginPlugin',
- *       'validate' => 'TfaMySendPlugin',
- *       'fallback' => array('TfaMyRecoveryCodePlugin'),
- *     ),
+ *   @see tfa_start_context() for format
  */
 function tfa_get_context($account) {
   if (isset($_SESSION['tfa'][$account->uid])) {
     return $_SESSION['tfa'][$account->uid];
   }
-  else {
-    $context = array('uid' => $account->uid, 'plugins' => array());
+  return array();
+}
 
-    $api = module_invoke_all('tfa_api');
-    // Add system plugins.
-    foreach (variable_get('tfa_login_plugins', array()) as $key) {
-      if (array_key_exists($key, $api)) {
-        $context['plugins']['login'][] = $api[$key]['class'];
-      }
+/**
+ * Start context for TFA.
+ *
+ * @param $account User account
+ * @return array
+ *   array(
+ *     'uid' => 9,
+ *     'plugins' => array(
+ *       'validate' => 'TfaMySendPlugin',
+ *       'login' => arrray('TfaMyLoginPlugin'),
+ *       'fallback' => array('TfaMyRecoveryCodePlugin'),
+ *       'setup' => 'TfaMySetupPlugin',
+ *     ),
+ */
+function tfa_start_context($account) {
+  $context = array('uid' => $account->uid, 'plugins' => array());
+
+  $api = module_invoke_all('tfa_api');
+  // Add login plugins.
+  foreach (variable_get('tfa_login_plugins', array()) as $key) {
+    if (array_key_exists($key, $api)) {
+      $context['plugins']['login'][] = $api[$key]['class'];
     }
-    // Add validate.
-    $validate = variable_get('tfa_validate_plugin', '');
-    if (!empty($validate) && array_key_exists($validate, $api)) {
-      $context['plugins']['validate'] = $api[$validate]['class'];
-    }
-    // Add fallback plugins.
-    foreach (variable_get('tfa_fallback_plugins', array()) as $key) {
-      if (array_key_exists($key, $api)) {
-        $context['plugins']['fallback'][] = $api[$key]['class'];
-      }
-    }
-    // Allow other modules to modify TFA context.
-    drupal_alter('tfa_context', $context);
-    $_SESSION['tfa'][$account->uid] = $context;
-    return $context;
   }
+  // Add validate.
+  $validate = variable_get('tfa_validate_plugin', '');
+  if (!empty($validate) && array_key_exists($validate, $api)) {
+    $context['plugins']['validate'] = $api[$validate]['class'];
+  }
+  // Add fallback plugins.
+  foreach (variable_get('tfa_fallback_plugins', array()) as $key) {
+    if (array_key_exists($key, $api)) {
+      $context['plugins']['fallback'][] = $api[$key]['class'];
+    }
+  }
+  // Allow other modules to modify TFA context.
+  drupal_alter('tfa_context', $context);
+  $_SESSION['tfa'][$account->uid] = $context;
+  return $context;
+}
+
+/**
+ * Remove context for account.
+ *
+ * @param $account User account object
+ */
+function tfa_clear_context($account) {
+  unset($_SESSION['tfa'][$account->uid]);
 }
 
 /**
  * Get Tfa object in the account's current context.
  *
- * @param  $account User account object
+ * @param $account User account object
  * @return Tfa
  */
 function tfa_get_process($account) {
   $tfa = &drupal_static(__FUNCTION__);
   if (!isset($tfa)) {
     $context = tfa_get_context($account);
+    if (empty($context)) {
+      $context = tfa_start_context($account);
+    }
     $plugins = $context['plugins'];
     $tfa = new Tfa($plugins, $context);
   }
@@ -194,8 +219,7 @@ function tfa_login_submit($form, &$form_state) {
     // Restart flood levels and session context.
     flood_clear_event('tfa_validate');
     flood_register_event('tfa_begin');
-    $_SESSION['tfa'] = array();
-    $context = tfa_get_context($account);
+    $context = tfa_start_context($account);
 
     $query = drupal_get_query_parameters();
     if (!empty($form_state['redirect'])) {
@@ -206,8 +230,9 @@ function tfa_login_submit($form, &$form_state) {
     }
     unset($_GET['destination']);
 
-    // @todo get plugin context
-
+    // Begin TFA and set process context.
+    $tfa->begin();
+    $context = $tfa->getContext();
     tfa_set_context($account, $context);
 
     $login_hash = tfa_login_hash($account);
@@ -272,7 +297,7 @@ function tfa_user_login(&$edit, $account) {
     // Restart flood levels and session context.
     flood_clear_event('tfa_validate');
     flood_register_event('tfa_begin');
-    $_SESSION['tfa'] = array();
+    $context = tfa_start_context($account);
 
     // Hold onto destination. It will be used in tfa_form_submit().
     $query = drupal_get_query_parameters();
@@ -282,9 +307,15 @@ function tfa_user_login(&$edit, $account) {
       $query['pass-reset-token'] = arg(4);
     }
     unset($_GET['destination']);
+
+    // Begin TFA and set process context.
+    $tfa->begin();
+    $context = $tfa->getContext();
+    tfa_set_context($account, $context);
+
     $login_hash = tfa_login_hash($account);
     // Use of $_GET['destination'] would allow other hooks to run but since the
-    // current user is no longer authenticated their context would be incorrect.
+    // current user is no longer authenticated their expectation would be wrong.
     drupal_goto('system/tfa/' . $account->uid . '/' . $login_hash, array('query' => $query));
   }
 }
@@ -323,7 +354,7 @@ function tfa_login($account) {
 
   watchdog('tfa', 'Session opened for %name.', array('%name' => $user->name));
   // Clear existing context and set master authenticated context.
-  $_SESSION['tfa'][$user->uid] = array();
+  tfa_clear_context($user);
   $_SESSION['tfa'][$user->uid]['login'] = TRUE;
 
   // Truncate flood for user.

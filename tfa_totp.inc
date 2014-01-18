@@ -2,7 +2,7 @@
 
 class TfaTotp extends TfaBasePlugin implements TfaValidationPluginInterface {
 
-  public function getForm($form) {
+  public function getForm(array $form, array &$form_state) {
     $form['code'] = array(
       '#type' => 'textfield',
       '#title' => t('Code'),
@@ -17,7 +17,7 @@ class TfaTotp extends TfaBasePlugin implements TfaValidationPluginInterface {
     return $form;
   }
 
-  public function validateForm(&$form_state) {
+  public function validateForm(array $form, array &$form_state) {
     $this->code = variable_get('tfa_totp', 123456);
     if (!parent::validate($form_state['values']['code'])) {
       $this->errorMessages['code'] = t('Invalid application code.');

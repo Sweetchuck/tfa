@@ -7,7 +7,7 @@ class TfaTestFallback extends TfaBasePlugin implements TfaValidationPluginInterf
     $this->code = 'FAILSAFE';
   }
 
-  public function getForm($form) {
+  public function getForm(array $form, array &$form_state) {
     $form['recover'] = array(
       '#type' => 'textfield',
       '#title' => t('Enter recovery code'),
@@ -20,7 +20,7 @@ class TfaTestFallback extends TfaBasePlugin implements TfaValidationPluginInterf
     return $form;
   }
 
-  public function validateForm(&$form_state) {
+  public function validateForm(array $form, array &$form_state) {
     if (!parent::validate($form_state['values']['recover'])) {
       $this->errorMessages['code'] = t('Invalid recovery code');
       return FALSE;

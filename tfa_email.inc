@@ -2,7 +2,25 @@
 
 class TfaEmail extends TfaBasePlugin implements TfaValidationPluginInterface, TfaSendPluginInterface {
 
-  public function getForm($form) {
+  public function __construct(array $context) {
+    parent::__construct($context);
+    if (!empty($context['validate_context']) && !empty($context['validate_context']['code'])) {
+      $this->code = $context['validate_context']['code'];
+    }
+  }
+
+  /**
+   *
+   */
+  public function begin() {
+    if (!$this->code) {
+      $this->code = $this->generate();
+      drupal_set_message('gen ' . $this->code);
+      $this->sendCode($this->code);
+    }
+  }
+
+  public function getForm(array $form, array &$form_state) {
     $form['code'] = array(
       '#type' => 'textfield',
       '#title' => t('Verification Code'),
@@ -23,25 +41,8 @@ class TfaEmail extends TfaBasePlugin implements TfaValidationPluginInterface, Tf
     return $form;
   }
 
-  public function submitForm($form_state) {
-    // Resend code if pushed.
-    if ($form_state['values']['op'] === $form_state['values']['resend']) {
-      drupal_set_message('Code resent');
-      $code = $this->generate();
-      $this->send($code);
-    }
-    else {
-      parent::submitForm($form_state);
-    }
-  }
-
-  public function send() {
-    $code = $this->generate();
-    $this->sendCode($code);
-  }
-
-  public function validateForm(&$form_state) {
-    $this->code = variable_get('tfa_test', 'code');
+  public function validateForm(array $form, array &$form_state) {
+    //$this->code = variable_get('tfa_test_email_code', 'code');
     if (!parent::validate($form_state['values']['code'])) {
       $this->errorMessages['code'] = t('Invalid code.');
       return FALSE;
@@ -51,11 +52,36 @@ class TfaEmail extends TfaBasePlugin implements TfaValidationPluginInterface, Tf
     }
   }
 
+  public function submitForm(array $form, array &$form_state) {
+    // Resend code if pushed.
+    if ($form_state['values']['op'] === $form_state['values']['resend']) {
+      drupal_set_message('Code resent');
+      $this->code = $this->generate();
+      drupal_set_message('regen ' . $this->code);
+      $this->sendCode($this->code);
+      return FALSE;
+    }
+    else {
+      return parent::submitForm($form, $form_state);
+    }
+  }
+
+  /**
+   * Return context for this plugin.
+   *
+   * @return array
+   */
+  public function getPluginContext() {
+    return array(
+      'code' => $this->code,
+    );
+  }
+
   protected function generate() {
     $code = parent::generate();
     // store code
     //variable_set('tfa_test', $code);
-    $code = variable_get('tfa_test', '3lk2jf3');
+    $this->code = $code; //variable_set('tfa_test_email_code', $code);
     return $code;
   }
 
