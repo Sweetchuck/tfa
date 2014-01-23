@@ -156,35 +156,6 @@ function tfa_get_process($account) {
 }
 
 /**
- * Implements hook_tfa_api() for itself.
- */
-function tfa_tfa_api() {
-  // @todo here for testing
-  return array(
-    'tfa_email' => array(
-      'class' => 'TfaEmail',
-      'name' => 'Email',
-    ),
-    'tfa_deviceauth' => array(
-      'class' => 'TfaDeviceAuth',
-      'name' => 'Remember device',
-    ),
-    'tfa_totp' => array(
-      'class' => 'TfaTotp',
-      'name' => 'TOTP',
-    ),
-    'tfa_recoverycode' => array(
-      'class' => 'TfaRecoveryCode',
-      'name' => 'Recovery codes',
-    ),
-    'tfa_role' => array(
-      'class' => 'TfaRole',
-      'name' => 'Admin role',
-    ),
-  );
-}
-
-/**
  * Implements hook_form_alter().
  */
 function tfa_form_alter(&$form, &$form_state, $form_id) {

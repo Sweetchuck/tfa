@@ -429,7 +429,7 @@ abstract class TfaBasePlugin {
   }
 
   /**
-   * Validate code and set internal valid property.
+   * Validate code.
    *
    * @param string $code Code to be validated
    * @return bool Whether code is valid
