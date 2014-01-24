@@ -20,7 +20,7 @@ function tfa_menu() {
 
   $items['admin/config/people/tfa'] = array(
     'title' => 'Two-factor Authentication',
-    'description' => 'TFA process settings',
+    'description' => 'TFA process and plugin settings',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('tfa_admin_settings'),
     'access arguments' => array('admin tfa settings'),
@@ -182,7 +182,7 @@ function tfa_login_submit($form, &$form_state) {
   $tfa = tfa_get_process($account);
 
   if (variable_get('tfa_required', 0) && !tfa_login_complete($account) && !$tfa->ready() && !tfa_login_allowed($account)) {
-    drupal_set_message(t('Login disallowed. You are required to setup TFA. Please contact a site administrator.'), 'error');
+    drupal_set_message(t('Login disallowed. You are required to setup two-factor authentication. Please contact a site administrator.'), 'error');
     $form_state['redirect'] = 'user';
   }
   elseif (!tfa_login_complete($account) && $tfa->ready() && !tfa_login_allowed($account)) {
@@ -259,7 +259,7 @@ function tfa_user_login(&$edit, $account) {
   $tfa = tfa_get_process($account);
   if (variable_get('tfa_required', 0) && !tfa_login_complete($account) && !$tfa->ready() && !tfa_login_allowed($account)) {
     tfa_logout();
-    drupal_set_message(t('Login disallowed. You are required to setup TFA. Please contact a site administrator.'), 'error');
+    drupal_set_message(t('Login disallowed. You are required to setup two-factor authentication. Please contact a site administrator.'), 'error');
     drupal_goto('user');
   }
   elseif (!tfa_login_complete($account) && $tfa->ready() && !tfa_login_allowed($account)) {
@@ -339,13 +339,12 @@ function tfa_login($account) {
  * Implements hook_help().
  */
 function tfa_help($path, $arg) {
-  $link = '<p>' . t('<a href="!url">Read the TFA configuration documentation</a> on drupal.org.', array('!url' => url('http://drupal.org/node/1663240'))) . '</p>';
-  // @todo out of date
+  $link = '<p>' . t('For up-to-date help see the <a href="!url">TFA module documentation</a> on drupal.org.', array('!url' => url('http://drupal.org/node/1663240'))) . '</p>';
   switch ($path) {
     case 'admin/help#tfa':
-      $output = '';
-      $output .= '<h3>' . t('Two-factor Authentication') . '</h3>';
-      $output .= '<p>' . t("") . '<p>';
+      $output = '<h3>' . t('Two-factor Authentication for Drupal') . '</h3>';
+      $output .= '<p>' . t("TFA is a base module for providing two-factor authentication for your Drupal site. As such it provides a framework for specific TFA plugins that act during user authentication to confirm a \"second factor\" for the user.") . '<p>';
+      // @todo include explanations on TFA module variables and fallback ordering
       $output .= $link;
       return $output;
   }

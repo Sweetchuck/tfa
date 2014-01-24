@@ -216,13 +216,15 @@ function tfa_admin_settings_submit($form, &$form_state) {
 
   // Set login plugins.
   $login = array();
-  foreach ($values['tfa_login'] as $key => $enabled) {
-    if ($enabled) {
-      $login[] = $key;
+  if (!empty($values['tfa_login'])) {
+    foreach ($values['tfa_login'] as $key => $enabled) {
+      if ($enabled) {
+        $login[] = $key;
+      }
     }
-  }
-  if (!empty($login)) {
-    variable_set('tfa_login_plugins', $login);
+    if (!empty($login)) {
+      variable_set('tfa_login_plugins', $login);
+    }
   }
   // Set required.
   variable_set('tfa_required', $values['tfa_required']);

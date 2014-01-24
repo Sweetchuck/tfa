@@ -18,19 +18,19 @@
  *
  * This hook is required to use your own TFA plugin.
  *
- * A plugin must extend the TfaBasePlugin class and may implement one or more of
- * the TFA plugin interfaces.
+ * A plugin must extend the TfaBasePlugin class and may implement one or more
+ * TFA plugin interfaces.
  *
  * Note, user-defined plugin classes must be available to the Drupal registry
- * for loading.
+ * for loading. Either define them in a .info file or via an autoloader.
  *
  * @return
  *   Keyed array of information about the plugin for TFA integration.
  *
  *   Required key:
  *
- *    - 'machine_name'
- *      Unique machine name identifying the plugin.
+ *    - 'example_machine_name'
+ *      A unique machine name identifying the plugin.
  *
  *    With required sub-array containing:
  *
@@ -48,3 +48,88 @@ function hook_tfa_api() {
   );
 }
 
+/**
+ * Example TFA plugin setup.
+ *
+ * Adapt these Form API methods for your own module. For example, for a plugin
+ * that sends a code via SMS you could use this form to allow the user to enter
+ * their phone number.
+ */
+
+/**
+ * Form builder for account configuration of TFA plugin.
+ */
+function my_tfa_setup_form($form, &$form_state, $account) {
+
+  if (empty($form_state['storage'])) {
+    /**
+     * Include details about existing setup, if applicable.
+     */
+
+    // Button to begin setup.
+    $form['start'] = array(
+      '#type' => 'submit',
+      '#value' => t('Setup'),
+    );
+  }
+  else {
+    // Return the setup plugin's form.
+    $tfaSetup = $form_state['storage']['tfa_setup'];
+    $form = $tfaSetup->getForm($form, $form_state);
+  }
+
+  // Required account element.
+  $form['account'] = array(
+    '#type' => 'value',
+    '#value' => $account,
+  );
+  return $form;
+}
+
+/**
+ * Form validation handler.
+ */
+function my_tfa_setup_form_validate($form, &$form_state) {
+  // If there's no storage the form is just beginning, pass over to submit
+  // handler.
+  if (empty($form_state['storage'])) {
+    return;
+  }
+  // Run setup plugin's form validation.
+  $tfaSetup = $form_state['storage']['tfa_setup'];
+  if (!$tfaSetup->validateForm($form, $form_state)) {
+    foreach ($tfaSetup->getErrorMessages() as $element => $message) {
+      form_set_error($element, $message);
+    }
+  }
+}
+
+/**
+ * Form submission handler.
+ */
+function my_tfa_setup_form_submit($form, &$form_state) {
+  $account = $form['account']['#value'];
+
+  if (empty($form_state['storage'])) {
+    // Start the TfaSetup process.
+
+    // $class must be defined somehow (e.g. from a variable)
+    $tfaSetup = new TfaSetup(array('setup' => $class), array('uid' => $account->uid));
+
+    // Store TfaSetup process for multi-step.
+    $form_state['storage']['tfa_setup'] = $tfaSetup;
+    $form_state['rebuild'] = TRUE;
+  }
+  elseif (!empty($form_state['storage']['tfa_setup'])) {
+    // Invoke plugin form submission.
+    $tfaSetup = $form_state['storage']['tfa_setup'];
+    if ($tfaSetup->submitForm($form, $form_state)) {
+      drupal_set_message('Setup complete');
+      $form_state['redirect'] = 'user';
+    }
+    else {
+      // Setup isn't complete so rebuild.
+      $form_state['rebuild'] = TRUE;
+    }
+  }
+}
