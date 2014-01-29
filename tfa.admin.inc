@@ -222,10 +222,8 @@ function tfa_admin_settings_submit($form, &$form_state) {
         $login[] = $key;
       }
     }
-    if (!empty($login)) {
-      variable_set('tfa_login_plugins', $login);
-    }
   }
+  variable_set('tfa_login_plugins', $login);
   // Set required.
   variable_set('tfa_required', $values['tfa_required']);
 }
