@@ -95,7 +95,7 @@ function tfa_form_submit($form, &$form_state) {
     $tfa->finalize();
     tfa_login($account);
     // Set redirect based on query parameters, existing $form_state or context.
-    $form_state['redirect'] = _tfa_form_get_destination($context, $form_state);
+    $form_state['redirect'] = _tfa_form_get_destination($context, $form_state, $account);
   }
 }
 
@@ -104,9 +104,10 @@ function tfa_form_submit($form, &$form_state) {
  *
  * @param array $context TFA account context
  * @param array $form_state Form API state array from tfa_form_submit()
+ * @param $account User account
  * @return array
  */
-function _tfa_form_get_destination($context, $form_state) {
+function _tfa_form_get_destination($context, $form_state, $account) {
   $query = drupal_get_query_parameters();
   $options = array();
   $destination = 'user';

@@ -298,7 +298,7 @@ class TfaTestCase extends DrupalWebTestCase {
       case 'flood-begin':
         return 'You have reached the threshold for TFA attempts.';
       case 'required':
-        return 'Login disallowed. You are required to setup TFA. Please contact a site administrator.';
+        return 'Login disallowed. You are required to setup two-factor authentication. Please contact a site administrator.';
     }
   }
 }
