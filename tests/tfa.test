@@ -57,7 +57,7 @@ class TfaTestCase extends DrupalWebTestCase {
     $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, 'Submit');
     $this->assertText('Invalid sent code', 'Error message appears for random code');
     // Check resend text.
-    $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, array(), 'Resend');
+    $this->drupalPost(NULL, array(), 'Resend');
     $this->assertText('Code resent', 'Resent message appears');
     // Confirm login.
     $edit = array(
@@ -84,10 +84,10 @@ class TfaTestCase extends DrupalWebTestCase {
     $this->assertText('TOTP code', 'TOTP code appears');
     $this->assertFieldById('edit-fallback', '', 'Fallback button appears');
     // Begin fallback.
-    $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, array(), $this->uiStrings('fallback-button'));
+    $this->drupalPost(NULL, array(), $this->uiStrings('fallback-button'));
     $this->assertText('Enter sent code', 'The send code input appears');
     // Second fallback.
-    $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, array(), $this->uiStrings('fallback-button'));
+    $this->drupalPost(NULL, array(), $this->uiStrings('fallback-button'));
     $this->assertText('Enter recovery code', 'The recovery code input appears');
     // Confirm validation error.
     $edit = array(
@@ -140,6 +140,31 @@ class TfaTestCase extends DrupalWebTestCase {
     );
     $this->drupalPost('user/login', $edit, 'Log in');
     $this->assertText($this->uiStrings('flood-begin'), 'The begin flood text appears');
+  }
+
+  /**
+   * Test that TFA correctly sets error messages from plugins that error during
+   * the begin() process.
+   */
+  public function testSendError() {
+    // Enable test plugin.
+    variable_set('tfa_validate_plugin', 'tfa_test_send');
+    // Cause the send plugin to have a begin process error.
+    variable_set('tfa_test_send_begin', FALSE);
+
+    $account = $this->web_user;
+
+    $edit = array(
+      'name' => $account->name,
+      'pass' => $account->pass_raw,
+    );
+    $this->drupalPost('user/login', $edit, 'Log in');
+    $url_parts = explode('/', $this->url);
+    $login_hash = array_pop($url_parts);
+    $this->assertText('Error during send', 'Error message appears for begin error');
+    // Test resend.
+    $this->drupalPost(NULL, array(), 'Resend');
+    $this->assertText('Error during resend', 'Error message appears for resend');
   }
 
   public function testRedirection() {

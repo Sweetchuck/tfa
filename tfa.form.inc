@@ -82,7 +82,9 @@ function tfa_form_submit($form, &$form_state) {
   if (!$tfa->submitForm($form, $form_state)) {
     // If fallback was triggered TFA process has been reset to new validate
     // plugin so run begin and store new context.
-    $tfa->begin();
+    if (isset($form_state['values']['fallback']) && $form_state['values']['op'] === $form_state['values']['fallback']) {
+      $tfa->begin();
+    }
     $context = $tfa->getContext();
     tfa_set_context($account, $context);
     // Clear validation flood.

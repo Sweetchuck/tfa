@@ -43,7 +43,13 @@ class TfaTestSend extends TfaBasePlugin implements TfaValidationPluginInterface,
 
   public function submitForm(array $form, array &$form_state) {
     if ($form_state['values']['op'] === $form_state['values']['resend']) {
-      drupal_set_message('Code resent');
+      // Support causing send error.
+      if (!variable_get('tfa_test_send_begin', TRUE)) {
+        drupal_set_message('Error during resend', 'error');
+      }
+      else {
+        drupal_set_message('Code resent');
+      }
       return FALSE;
     }
     else {
@@ -52,7 +58,11 @@ class TfaTestSend extends TfaBasePlugin implements TfaValidationPluginInterface,
   }
 
   public function begin() {
-    // Do nothing. A real plugin should send code to the user.
+    // Variable used by TfaTestCase::testSendError().
+    if (!variable_get('tfa_test_send_begin', TRUE)) {
+      drupal_set_message('Error during send', 'error');
+    }
+    // A real plugin might send the code to the user.
   }
 }
 

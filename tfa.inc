@@ -166,11 +166,12 @@ class Tfa {
   }
 
   /**
-   *
+   * Invoke submitForm() on plugins.
    *
    * @param array $form
    * @param array $form_state
-   * @return bool
+   * @return bool Whether the validate plugin is complete.
+   *   FALSE will cause tfa_form_submit() to rebuild the form for multi-step.
    */
   public function submitForm(array $form, array &$form_state) {
     // Handle fallback if set.
@@ -204,7 +205,7 @@ class Tfa {
   public function begin() {
     // Invoke begin method on send validation plugins.
     if (method_exists($this->validatePlugin, 'begin')) {
-      $code = $this->validatePlugin->begin();
+      $this->validatePlugin->begin();
     }
   }
 
@@ -422,7 +423,8 @@ abstract class TfaBasePlugin {
    *
    * @param array $form
    * @param array $form_state
-   * @return bool
+   * @return bool Whether plugin form handling is complete.
+   *   Plugins should return FALSE to invoke multi-step.
    */
   public function submitForm(array $form, array &$form_state) {
     return TRUE;
