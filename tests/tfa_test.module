@@ -107,3 +107,13 @@ function tfa_test_setup_form_submit($form, &$form_state) {
     }
   }
 }
+
+/**
+ * Alters tfa_context array.
+ */
+function tfa_test_tfa_context_alter(&$context) {
+  if (variable_get('tfa_test_context_alter', FALSE) !== FALSE) {
+    // Set validate plugin.
+    $context['plugins']['validate'] = variable_get('tfa_test_context_alter', '');
+  }
+}

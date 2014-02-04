@@ -291,6 +291,16 @@ class TfaSetup {
   }
 
   /**
+   * Run any begin setup processes.
+   */
+  public function begin() {
+    // Invoke begin method on setup plugin.
+    if (method_exists($this->setupPlugin, 'begin')) {
+      $this->setupPlugin->begin();
+    }
+  }
+
+  /**
    * Get plugin form.
    *
    * @param array $form

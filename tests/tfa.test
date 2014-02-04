@@ -253,6 +253,25 @@ class TfaTestCase extends DrupalWebTestCase {
   }
 
   /**
+   * Test tfa_context_alter.
+   */
+  public function testAlter() {
+    // Set TOTP as primary.
+    variable_set('tfa_validate_plugin', 'tfa_test_totp');
+    variable_set('tfa_fallback_plugins', array('tfa_test_send', 'tfa_test_fallback'));
+    // Allow context alter that will set send as validate plugin.
+    variable_set('tfa_test_context_alter', 'TfaTestSend');
+    $account = $this->web_user;
+
+    $edit = array(
+      'name' => $account->name,
+      'pass' => $account->pass_raw,
+    );
+    $this->drupalPost('user/login', $edit, 'Log in');
+    $this->assertNoText('TOTP code', 'TOTP code does not appear');
+  }
+
+  /**
    * Test the TfaSetup forms and process in tfa_test.module
    *
    * This test illustrates how a user would setup a TFA send plugin. See
