@@ -86,8 +86,12 @@ class Tfa {
           continue; // Skip this fallback if its same as validation.
         }
         $fallback = new $class($context);
+        // Only plugins that are ready can stay.
         if ($fallback->ready()) {
-          $this->fallbackPlugins = $class;
+          $this->fallbackPlugins[] = $class;
+        }
+        else {
+          unset($plugins['fallback'][$key]);
         }
       }
       if (!empty($this->fallbackPlugins)) {
@@ -461,9 +465,13 @@ abstract class TfaBasePlugin {
    * @return string
    */
   protected function generate() {
-    $code = substr(str_shuffle(str_repeat("123456789abcdefghjkmnpqrstuvwxyz", 5)), 0, $this->codeLength);
-    $this->code = $code;
-    return $code;
+    $characters = '123456789abcdefghijklmnpqrstuvwxyz';
+    $string = '';
+    $max = strlen($characters) - 1;
+    for ($p = 0; $p < $length; $p++) {
+      $string .= $characters[mt_rand(0, $max)];
+    }
+    return $string;
   }
 
   /**
