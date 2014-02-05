@@ -468,7 +468,7 @@ abstract class TfaBasePlugin {
     $characters = '123456789abcdefghijklmnpqrstuvwxyz';
     $string = '';
     $max = strlen($characters) - 1;
-    for ($p = 0; $p < $length; $p++) {
+    for ($p = 0; $p < $this->codeLength; $p++) {
       $string .= $characters[mt_rand(0, $max)];
     }
     return $string;
