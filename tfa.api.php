@@ -133,3 +133,15 @@ function my_tfa_setup_form_submit($form, &$form_state) {
     }
   }
 }
+
+/**
+ * Act during TFA flood hit.
+ *
+ * This hook is invoked when one of the flood limits is hit.
+ *
+ * @param array $context
+ *   TFA process context.
+ */
+function hook_tfa_flood_hit($context = array()) {
+
+}

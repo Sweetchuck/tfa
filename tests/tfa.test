@@ -125,6 +125,7 @@ class TfaTestCase extends DrupalWebTestCase {
     );
     $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, 'Submit');
     $this->assertText('Invalid sent code', 'Error message appears for random code');
+    $this->assertIdentical(variable_get('tfa_test_flood_hit', ''), '', 'TFA flood hit hooks not yet invoked');
     // Hit flood limit.
     for ($i = 1; $i < $hourly_threshold; $i++) {
       $this->drupalPost('system/tfa/' . $account->uid . '/' . $login_hash, $edit, 'Submit');
@@ -140,6 +141,9 @@ class TfaTestCase extends DrupalWebTestCase {
     );
     $this->drupalPost('user/login', $edit, 'Log in');
     $this->assertText($this->uiStrings('flood-begin'), 'The begin flood text appears');
+
+    // Assert that hook_tfa_flood_hit() was invoked.
+    $this->assertIdentical(variable_get('tfa_test_flood_hit', ''), $account->uid, 'TFA flood hit hooks invoked');
   }
 
   /**

@@ -20,13 +20,14 @@ function tfa_begin_form($uid) {
  * Invokes plugin getForm() and handles multi-step fallback.
  */
 function tfa_form($form, $form_state, $account) {
+  $tfa = tfa_get_process($account);
 
   // Check flood tables.
   if (_tfa_hit_flood()) {
+    module_invoke_all('tfa_flood_hit', $tfa->getContext());
     return drupal_access_denied();
   }
 
-  $tfa = tfa_get_process($account);
   // Get TFA plugins form.
   $form = $tfa->getForm($form, $form_state);
   if ($tfa->hasFallback()) {
@@ -161,12 +162,12 @@ function _tfa_hit_flood() {
     return FALSE;
   }
   $window = variable_get('tfa_flood_window', 3600);
-  if (!flood_is_allowed('tfa_validate', variable_get('tfa_validate_threshold', 5), $window)) {
+  if (!flood_is_allowed('tfa_validate', variable_get('tfa_validate_threshold', 6), $window)) {
     drupal_set_message(t('You have reached the threshold for incorrect code entry attempts. Please try again in !time minutes.', array('!time' => $window / 60)), 'error');
     return TRUE;
   }
   // Check entire process flood.
-  elseif (!flood_is_allowed('tfa_begin', variable_get('tfa_begin_threshold', 3), $window)) {
+  elseif (!flood_is_allowed('tfa_begin', variable_get('tfa_begin_threshold', 6), $window)) {
     drupal_set_message(t('You have reached the threshold for TFA attempts. Please try again in !time minutes.', array('!time' => $window / 60)), 'error');
     return TRUE;
   }

@@ -117,3 +117,12 @@ function tfa_test_tfa_context_alter(&$context) {
     $context['plugins']['validate'] = variable_get('tfa_test_context_alter', '');
   }
 }
+
+/**
+ * Implements hook_tfa_flood_hit().
+ *
+ * @param array $context TFA context.
+ */
+function tfa_test_tfa_flood_hit($context) {
+  variable_set('tfa_test_flood_hit', $context['uid']);
+}
