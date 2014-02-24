@@ -79,6 +79,7 @@ class Tfa {
       }
     }
     if (!empty($plugins['fallback'])) {
+      $plugins['fallback'] = array_unique($plugins['fallback']);
       // @todo consider making plugin->ready a class method?
       foreach ($plugins['fallback'] as $key => $class) {
         if ($class === $plugins['validate']) {
@@ -186,6 +187,8 @@ class Tfa {
       if (empty($this->context['plugins']['fallback'])) {
         $this->fallback = FALSE;
       }
+      // Record which plugin is activated as fallback.
+      $this->context['active_fallback'] = $this->context['plugins']['validate'];
     }
     // Otherwise invoke plugin submitForm().
     elseif (method_exists($this->validatePlugin, 'submitForm')) {
