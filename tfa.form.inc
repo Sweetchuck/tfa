@@ -7,11 +7,9 @@
 /**
  * Start of TFA process form.
  *
- * @param string $uid User account ID
+ * @param $account User account
  */
-function tfa_begin_form($uid) {
-  $account = user_load($uid);
-
+function tfa_begin_form($account) {
   return drupal_get_form('tfa_form', $account);
 }
 /**

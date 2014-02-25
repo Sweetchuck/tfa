@@ -8,7 +8,7 @@
  * Implements hook_menu().
  */
 function tfa_menu() {
-  $items['system/tfa/%/%'] = array(
+  $items['system/tfa/%user/%'] = array(
     'title' => 'Two-Factor Authentication',
     'page callback' => 'tfa_begin_form',
     'page arguments' => array(2),
@@ -32,9 +32,8 @@ function tfa_menu() {
 /**
  * Validate access to TFA code entry form.
  */
-function tfa_entry_access($uid, $url_hash) {
+function tfa_entry_access($account, $url_hash) {
   // Generate a hash for this account.
-  $account = user_load($uid);
   $hash = tfa_login_hash($account);
   $context = tfa_get_context($account);
   return $hash === $url_hash && !empty($context) && $context['uid'] === $account->uid;
