@@ -164,15 +164,34 @@ function tfa_form_alter(&$form, &$form_state, $form_id) {
       if (variable_get('tfa_enabled', 0)) {
         // Replace Drupal's login submit handler with TFA to check if
         // authentication should be interrupted and user redirected to TFA form.
-        $form['#submit'] = array_diff($form['#submit'], array('user_login_submit'));
-        $form['#submit'][] = 'tfa_login_submit';
+        // Replacing user_login_submit() in its position allows other form_alter
+        // handlers to run after. However, the user must be redirected to the
+        // TFA form so the last handler in the order must be
+        // tfa_login_form_redirect(). Other modules may alter the tfa_redirect
+        // options element as needed to set the destination after TFA.
+        $key = array_search('user_login_submit', $form['#submit']);
+        $form['#submit'][$key] = 'tfa_login_submit';
+        $form['#submit'][] = 'tfa_login_form_redirect';
       }
       break;
   }
 }
 
 /**
- * Login submit handler.
+ * Login submit handler for TFA form redirection.
+ *
+ * Should be last invoked form submit handler for forms user_login and
+ * user_login_block so that when the TFA process is applied the user will be
+ * sent to the TFA form.
+ */
+function tfa_login_form_redirect($form, &$form_state) {
+  if (isset($form_state['tfa_redirect'])) {
+    $form_state['redirect'] = $form_state['tfa_redirect'];
+  }
+}
+
+/**
+ * Login submit handler to determine if TFA process is applicable.
  */
 function tfa_login_submit($form, &$form_state) {
   // Similar to tfa_user_login() but not required to force user logout.
@@ -207,7 +226,7 @@ function tfa_login_submit($form, &$form_state) {
     tfa_set_context($account, $context);
 
     $login_hash = tfa_login_hash($account);
-    $form_state['redirect'] = array(
+    $form_state['tfa_redirect'] = array(
       'system/tfa/' . $account->uid . '/' . $login_hash,
       array('query' => $query),
     );
