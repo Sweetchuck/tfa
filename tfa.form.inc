@@ -118,7 +118,7 @@ function _tfa_form_get_destination($context, $form_state, $account) {
     watchdog('tfa', 'User %name used one-time login link', array('%name' => $account->name));
     drupal_set_message(t('You have just used your one-time login link. It is no longer necessary to use this link to log in. Please change your password.'));
     // Let the user's password be changed without the current password check.
-    $token = drupal_random_key();
+    $token = drupal_hash_base64(drupal_random_bytes(32));
     $_SESSION['pass_reset_' . $account->uid] = $token;
     $query['pass-reset-token'] = $token;
   }
@@ -147,6 +147,10 @@ function _tfa_form_get_destination($context, $form_state, $account) {
     }
   }
   $options = array_merge($options, array('query' => $query));
+  // Allow other modules to alter final destination. This is better than form
+  // altering TFA forms because callers would need to check the TFA process
+  // status to figure out when to act.
+  drupal_alter('tfa_complete_redirect', $destination, $options);
   return array($destination, $options);
 }
 
