@@ -151,6 +151,19 @@ class Tfa {
   }
 
   /**
+   * Checks if user is allowed to continue with plugin action.
+   *
+   * @param int $window
+   * @return bool
+   */
+  public function floodIsAllowed($window = '') {
+    if (method_exists($this->validatePlugin, 'floodIsAllowed')) {
+      return $this->validatePlugin->floodIsAllowed($window);
+    }
+    return TRUE;
+  }
+
+  /**
    * Validate form.
    *
    * @param array $form

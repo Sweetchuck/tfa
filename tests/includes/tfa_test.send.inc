@@ -41,8 +41,24 @@ class TfaTestSend extends TfaBasePlugin implements TfaValidationPluginInterface,
     }
   }
 
+  /**
+   * Check resend flood.
+   *
+   * @param $window
+   * @return bool
+   */
+  public function floodIsAllowed($window) {
+    if (!flood_is_allowed('tfa_test_resend', variable_get('tfa_test_resend_threshold', 6), $window)) {
+      $this->errorMessages['code'] = t('Resend flood hit');
+      return FALSE;
+    }
+    return TRUE;
+  }
+
   public function submitForm(array $form, array &$form_state) {
     if ($form_state['values']['op'] === $form_state['values']['resend']) {
+      // Register resend event for flood protection.
+      flood_register_event('tfa_test_resend');
       // Support causing send error.
       if (!variable_get('tfa_test_send_begin', TRUE)) {
         drupal_set_message('Error during resend', 'error');
@@ -58,6 +74,8 @@ class TfaTestSend extends TfaBasePlugin implements TfaValidationPluginInterface,
   }
 
   public function begin() {
+    // Clear resend flood.
+    flood_clear_event('tfa_test_resend');
     // Variable used by TfaTestCase::testSendError().
     if (!variable_get('tfa_test_send_begin', TRUE)) {
       drupal_set_message('Error during send', 'error');

@@ -21,7 +21,7 @@ function tfa_form($form, $form_state, $account) {
   $tfa = tfa_get_process($account);
 
   // Check flood tables.
-  if (_tfa_hit_flood()) {
+  if (_tfa_hit_flood($tfa)) {
     module_invoke_all('tfa_flood_hit', $tfa->getContext());
     return drupal_access_denied();
   }
@@ -157,9 +157,10 @@ function _tfa_form_get_destination($context, $form_state, $account) {
 /**
  * Check if flood has been hit.
  *
+ * @param Tfa $tfa
  * @return bool
  */
-function _tfa_hit_flood() {
+function _tfa_hit_flood($tfa) {
   if (variable_get('tfa_test_mode', 0)) {
     return FALSE;
   }
@@ -171,6 +172,13 @@ function _tfa_hit_flood() {
   // Check entire process flood.
   elseif (!flood_is_allowed('tfa_begin', variable_get('tfa_begin_threshold', 6), $window)) {
     drupal_set_message(t('You have reached the threshold for TFA attempts. Please try again in !time minutes.', array('!time' => $window / 60)), 'error');
+    return TRUE;
+  }
+  // Check TFA plugin flood.
+  elseif (!$tfa->floodIsAllowed($window)) {
+    foreach ($tfa->getErrorMessages() as $message) {
+      drupal_set_message($message, 'error');
+    }
     return TRUE;
   }
   return FALSE;
