@@ -196,7 +196,8 @@ class Tfa {
     if ($this->fallback && isset($form_state['values']['fallback']) && $form_state['values']['op'] === $form_state['values']['fallback']) {
       // Change context to next fallback and reset validatePlugin.
       $this->context['plugins']['validate'] = array_shift($this->context['plugins']['fallback']);
-      $this->validatePlugin = new $this->context['plugins']['validate']($this->context);
+      $class = $this->context['plugins']['validate'];
+      $this->validatePlugin = new $class($this->context);
       if (empty($this->context['plugins']['fallback'])) {
         $this->fallback = FALSE;
       }
@@ -401,6 +402,11 @@ abstract class TfaBasePlugin {
   protected $errorMessages = array();
 
   /**
+   * @var bool
+   */
+  protected $isValid;
+
+  /**
    * @var string
    */
   protected $encryptionKey;
@@ -428,6 +434,7 @@ abstract class TfaBasePlugin {
     $this->context = $context;
     // Default code length is 6.
     $this->codeLength = 6;
+    $this->isValid = FALSE;
   }
 
   /**
@@ -457,17 +464,21 @@ abstract class TfaBasePlugin {
    *   Plugins should return FALSE to invoke multi-step.
    */
   public function submitForm(array $form, array &$form_state) {
-    return TRUE;
+    return $this->isValid;
   }
 
   /**
    * Validate code.
+   *
+   * Note, plugins overriding validate() should be sure to set isValid property
+   * correctly or else also override submitForm().
    *
    * @param string $code Code to be validated
    * @return bool Whether code is valid
    */
   protected function validate($code) {
     if ((string) $code === (string) $this->code) {
+      $this->isValid = TRUE;
       return TRUE;
     }
     else {
