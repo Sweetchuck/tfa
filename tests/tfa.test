@@ -144,12 +144,13 @@ class TfaTestCase extends DrupalWebTestCase {
 
     // Assert that hook_tfa_flood_hit() was invoked.
     $this->assertIdentical(variable_get('tfa_test_flood_hit', ''), $account->uid, 'TFA flood hit hooks invoked');
+  }
 
-    flood_clear_event('tfa_begin');
-    flood_clear_event('tfa_validate');
-
-    // Test plugin flood control.
+  public function testPluginFloodControl() {
+    variable_set('tfa_validate_plugin', 'tfa_test_send');
+    $account = $this->web_user;
     variable_set('tfa_test_resend_threshold', 1);
+
     $edit = array(
       'name' => $account->name,
       'pass' => $account->pass_raw,

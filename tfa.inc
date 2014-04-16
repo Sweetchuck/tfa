@@ -153,7 +153,7 @@ class Tfa {
   /**
    * Checks if user is allowed to continue with plugin action.
    *
-   * @param int $window
+   * @param string $window
    * @return bool
    */
   public function floodIsAllowed($window = '') {

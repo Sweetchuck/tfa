@@ -48,7 +48,7 @@ class TfaTestSend extends TfaBasePlugin implements TfaValidationPluginInterface,
    * @return bool
    */
   public function floodIsAllowed($window) {
-    if (!flood_is_allowed('tfa_test_resend', variable_get('tfa_test_resend_threshold', 6), $window)) {
+    if (!flood_is_allowed('tfa_test_resend', variable_get('tfa_test_resend_threshold', 6), $window, $this->context['uid'])) {
       $this->errorMessages['code'] = t('Resend flood hit');
       return FALSE;
     }
@@ -58,7 +58,7 @@ class TfaTestSend extends TfaBasePlugin implements TfaValidationPluginInterface,
   public function submitForm(array $form, array &$form_state) {
     if ($form_state['values']['op'] === $form_state['values']['resend']) {
       // Register resend event for flood protection.
-      flood_register_event('tfa_test_resend');
+      flood_register_event('tfa_test_resend', 3600, $this->context['uid']);
       // Support causing send error.
       if (!variable_get('tfa_test_send_begin', TRUE)) {
         drupal_set_message('Error during resend', 'error');
