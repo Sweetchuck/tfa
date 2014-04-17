@@ -23,7 +23,13 @@ function tfa_admin_settings($form, $form_state) {
     elseif (in_array('TfaLoginPluginInterface', class_implements($data['class']))) {
       $login_plugins[$key] = $data['name'];
     }
+  }
 
+  // Check if mcrypt plugin is available.
+  if (!extension_loaded('mcrypt')) {
+    // @todo allow alter in case of other encryption libs.
+    drupal_set_message(t('The TFA module requires the PHP Mcrypt extension be installed on the web server. See <a href="!link">the TFA help documentation</a> for setup.', array('!link' => url('admin/help/tfa'))), 'error');
+    return array();
   }
 
   // Return if there are no plugins.
