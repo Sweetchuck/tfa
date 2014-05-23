@@ -249,7 +249,7 @@ class TfaTestCase extends DrupalWebTestCase {
     $account = $this->web_user;
 
     // Disable ready.
-    variable_set('tfa_test_send_ready', FALSE);
+    variable_set('tfa_test_is_ready', FALSE);
 
     $edit = array(
       'name' => $account->name,
@@ -260,9 +260,10 @@ class TfaTestCase extends DrupalWebTestCase {
 
     $this->drupalLogout();
 
-    // Require TFA.
-    variable_set('tfa_required', TRUE);
-
+    // Swap plugin.
+    variable_set('tfa_validate_plugin', 'tfa_test_totp');
+    // New account with the require TFA permission.
+    $account = $this->drupalCreateUser(array('access content', 'require tfa'));
     $edit = array(
       'name' => $account->name,
       'pass' => $account->pass_raw,

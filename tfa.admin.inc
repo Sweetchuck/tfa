@@ -79,14 +79,6 @@ function tfa_admin_settings($form, $form_state) {
     ':input[name="tfa_enabled"]' => array('checked' => TRUE))
   );
 
-  $form['tfa_required'] = array(
-    '#type' => 'checkbox',
-    '#title' => t('Require TFA'),
-    '#default_value' => variable_get('tfa_required', 0),
-    '#description' => t('Require TFA process for account login. <strong>Note, any account that is not setup for TFA (and does not have the "skip TFA" permission) will not be able to authenticate if this is set.</strong>'),
-    '#states' => $enabled_state,
-  );
-
   // Default active plugin
   if (count($validate_plugins) >= 1) {
     $form['tfa_validate'] = array(
@@ -230,8 +222,6 @@ function tfa_admin_settings_submit($form, &$form_state) {
     }
   }
   variable_set('tfa_login_plugins', $login);
-  // Set required.
-  variable_set('tfa_required', $values['tfa_required']);
 }
 
 /**

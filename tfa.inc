@@ -354,7 +354,6 @@ class TfaSetup {
 
   /**
    *
-   *
    * @param array $form
    * @param array $form_state
    * @return bool
@@ -641,4 +640,5 @@ interface TfaSetupPluginInterface {
    * @return bool
    */
   public function submitSetupForm(array $form, array &$form_state);
+
 }

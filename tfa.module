@@ -44,14 +44,13 @@ function tfa_entry_access($account, $url_hash) {
  */
 function tfa_permission() {
   return array(
-    'skip tfa' => array(
-      'title' => t('Skip TFA process'),
-      'description' => t('Skip the Two-factor authentication process and authenticate as normal.'),
-      'restrict access' => TRUE,
+    'require tfa' => array(
+      'title' => t('Require TFA process'),
+      'description' => t('Require two-factor to authenticate. Note: users without TFA setup will be unable to log in.'),
     ),
     'admin tfa settings' => array(
       'title' => t('Administer TFA'),
-      'description' => t('Configure the TFA process'),
+      'description' => t('Configure two-factor authentication settings.'),
       'restrict access' => TRUE,
     ),
   );
@@ -199,7 +198,7 @@ function tfa_login_submit($form, &$form_state) {
   $account = isset($form_state['uid']) ? user_load($form_state['uid']) : user_load_by_name($form_state['values']['name']);
   $tfa = tfa_get_process($account);
 
-  if (variable_get('tfa_required', 0) && !tfa_login_complete($account) && !$tfa->ready() && !tfa_login_allowed($account)) {
+  if (user_access('require tfa', $account) && !tfa_login_complete($account) && !$tfa->ready()) {
     drupal_set_message(t('Login disallowed. You are required to setup two-factor authentication. Please contact a site administrator.'), 'error');
     $form_state['redirect'] = 'user';
   }
@@ -258,9 +257,6 @@ function tfa_login_complete($account) {
  * @return bool
  */
 function tfa_login_allowed($account) {
-  if (user_access('skip tfa', $account)) {
-    return TRUE;
-  }
   // Check if login plugins will allow login.
   $tfa = tfa_get_process($account);
   return $tfa->loginAllowed() === TRUE;
@@ -270,13 +266,12 @@ function tfa_login_allowed($account) {
  * Implements hook_user_login().
  */
 function tfa_user_login(&$edit, $account) {
-
   if (!variable_get('tfa_enabled', 0)) {
     return;
   }
 
   $tfa = tfa_get_process($account);
-  if (variable_get('tfa_required', 0) && !tfa_login_complete($account) && !$tfa->ready() && !tfa_login_allowed($account)) {
+  if (user_access('require tfa', $account) && !tfa_login_complete($account) && !$tfa->ready()) {
     tfa_logout();
     drupal_set_message(t('Login disallowed. You are required to setup two-factor authentication. Please contact a site administrator.'), 'error');
     drupal_goto('user');

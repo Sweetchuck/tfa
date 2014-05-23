@@ -15,6 +15,7 @@ function tfa_uninstall() {
   variable_del('tfa_validate_threshold');
   variable_del('tfa_begin_threshold');
   variable_del('tfa_flood_window');
+  // This variable used to exist.
   variable_del('tfa_required');
   variable_del('tfa_enabled');
   variable_del('tfa_test_mode');

@@ -2,6 +2,10 @@
 
 class TfaTestTotp extends TfaBasePlugin implements TfaValidationPluginInterface {
 
+  public function ready() {
+    return variable_get('tfa_test_is_ready', TRUE);
+  }
+
   public function getForm(array $form, array &$form_state) {
     $form['code'] = array(
       '#type' => 'textfield',
