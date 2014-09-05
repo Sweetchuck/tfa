@@ -78,10 +78,13 @@ function tfa_set_context($account, $context) {
  *   @see tfa_start_context() for format
  */
 function tfa_get_context($account) {
+  $context = array();
   if (isset($_SESSION['tfa'][$account->uid])) {
-    return $_SESSION['tfa'][$account->uid];
+    $context = $_SESSION['tfa'][$account->uid];
   }
-  return array();
+  // Allow other modules to modify TFA context.
+  drupal_alter('tfa_context', $context);
+  return $context;
 }
 
 /**
