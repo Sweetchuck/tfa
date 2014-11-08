@@ -108,6 +108,18 @@ The finalize() method can be used to carry-out actions after confirming the TFA
 process. For example, a SMS plugin might mark a code as having been used to
 prevent a repeated attempt.
 
+#### Cryptography
+
+The base TFA plugin class provides encryption and decryption methods using PHP
+mcrypt. While you can use these methods for simple encryption it is recommended
+that you utilize more advanced cryptography libraries with your own plugins.
+
+Use one of the following libraries and override the TfaBasePlugin encrypt and
+decrypt methods.
+
+* Zend Framework's Zend\Crypt
+* phpseclib http://phpseclib.sourceforge.net/
+
 #### Example implementation descriptions
 
 **How to generate and send a code to a user via SMS**

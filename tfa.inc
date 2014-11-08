@@ -509,21 +509,21 @@ abstract class TfaBasePlugin {
    * @return string
    */
   protected function encrypt($text) {
-    $key = $this->encryptionKey;
+    $td = mcrypt_module_open('rijndael-128', '', 'cbc', '');
+    $iv = drupal_random_bytes(mcrypt_enc_get_iv_size($td));
 
-    $td = mcrypt_module_open('rijndael-128', '', 'ecb', '');
-    $iv = mcrypt_create_iv(mcrypt_enc_get_iv_size($td), MCRYPT_RAND);
-
-    $key = substr($key, 0, mcrypt_enc_get_key_size($td));
+    $key = substr($this->encryptionKey, 0, mcrypt_enc_get_key_size($td));
 
     mcrypt_generic_init($td, $key, $iv);
-
+    // Encrypt with message length so decryption can return message without
+    // padding.
+    $text = strlen($text) . '|' . $text;
     $data = mcrypt_generic($td, $text);
 
     mcrypt_generic_deinit($td);
     mcrypt_module_close($td);
 
-    return $data;
+    return $iv . $data;
   }
 
   /**
@@ -535,16 +535,18 @@ abstract class TfaBasePlugin {
    * @return string
    */
   protected function decrypt($data) {
-    $key = $this->encryptionKey;
+    $td = mcrypt_module_open('rijndael-128', '', 'cbc', '');
+    $iv = substr($data, 0, mcrypt_enc_get_iv_size($td));
 
-    $td = mcrypt_module_open('rijndael-128', '', 'ecb', '');
-    $iv = mcrypt_create_iv(mcrypt_enc_get_iv_size($td), MCRYPT_RAND);
-
-    $key = substr($key, 0, mcrypt_enc_get_key_size($td));
+    $data = substr($data, mcrypt_enc_get_iv_size($td));
+    $key = substr($this->encryptionKey, 0, mcrypt_enc_get_key_size($td));
 
     mcrypt_generic_init($td, $key, $iv);
 
-    $text = mdecrypt_generic($td, $data);
+    $decrypted_text = mdecrypt_generic($td, $data);
+    // Return only the message and none of its padding.
+    list($length, $padded_data) = explode('|', $decrypted_text, 2);
+    $text = substr($padded_data, 0, $length);
 
     mcrypt_generic_deinit($td);
     mcrypt_module_close($td);

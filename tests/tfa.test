@@ -349,6 +349,16 @@ class TfaTestCase extends DrupalWebTestCase {
   }
 
   /**
+   * Test TfaBasePlugin encryption methods.
+   */
+  protected function testEncryption() {
+    $tfa_totp = new TfaTestTotp();
+    $plain_text = $this->randomName(rand(6,20));
+    $tfa_totp->setInStore($plain_text);
+    $this->assertIdentical($plain_text, $tfa_totp->readFromStore());
+  }
+
+  /**
    * TFA module user interface strings.
    *
    * @param string Identifying string
