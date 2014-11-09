@@ -65,6 +65,11 @@ function tfa_form_validate($form, &$form_state) {
     }
     // Register failure for purposes of flood control.
     flood_register_event('tfa_validate');
+
+    if (_tfa_hit_flood($tfa)) {
+      module_invoke_all('tfa_flood_hit', $tfa->getContext());
+      return drupal_access_denied();
+    }
   }
 }
 
