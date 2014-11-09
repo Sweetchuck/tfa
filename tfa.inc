@@ -491,13 +491,14 @@ abstract class TfaBasePlugin {
    * @return string
    */
   protected function generate() {
-    $characters = '123456789abcdefghijklmnpqrstuvwxyz';
     $string = '';
-    $max = strlen($characters) - 1;
-    for ($p = 0; $p < $this->codeLength; $p++) {
-      $string .= $characters[mt_rand(0, $max)];
-    }
-    return $string;
+    do {
+      $chars = strtolower(base64_encode(drupal_random_bytes($this->codeLength)));
+      // Remove some characters that are more difficult to distinguish or type.
+      $string .= strtr($chars, array('+' => '', '/' => '', '=' => '', '-' => '', '_' => '', '0' => '', 'o' => ''));
+    } while(strlen($string <= $this->codeLength));
+
+    return substr($string, 0, $this->codeLength);
   }
 
   /**
