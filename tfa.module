@@ -59,8 +59,10 @@ function tfa_permission() {
 /**
  * Set context for account's TFA process.
  *
- * @param $account User account
- * @param array $context Context array
+ * @param object $account
+ *   User account
+ * @param array $context
+ *   Context array
  *   @see tfa_start_context() for context format
  */
 function tfa_set_context($account, $context) {
@@ -73,7 +75,8 @@ function tfa_set_context($account, $context) {
 /**
  * Context for account TFA process.
  *
- * @param $account User account
+ * @param object $account
+ *   User account
  * @return array
  *   @see tfa_start_context() for format
  */
@@ -90,39 +93,45 @@ function tfa_get_context($account) {
 /**
  * Start context for TFA.
  *
- * @param $account User account
+ * @param object $account
+ *   User account
+ *
  * @return array
  *   array(
  *     'uid' => 9,
  *     'plugins' => array(
- *       'validate' => 'TfaMySendPlugin',
- *       'login' => arrray('TfaMyLoginPlugin'),
- *       'fallback' => array('TfaMyRecoveryCodePlugin'),
- *       'setup' => 'TfaMySetupPlugin',
+ *       'validate' => 'tfa_my_send_plugin',
+ *       'login' => arrray('tfa_my_login_plugin'),
+ *       'fallback' => array('tfa_my_recovery_plugin'),
  *     ),
  */
 function tfa_start_context($account) {
-  $context = array('uid' => $account->uid, 'plugins' => array());
+  $plugins = array(
+    'validate' => '',
+    'fallback' => array(),
+    'login' => array(),
+  );
 
   $api = module_invoke_all('tfa_api');
   // Add login plugins.
   foreach (variable_get('tfa_login_plugins', array()) as $key) {
     if (array_key_exists($key, $api)) {
-      $context['plugins']['login'][] = $api[$key]['class'];
+      $plugins['login'][] = $key;
     }
   }
   // Add validate.
   $validate = variable_get('tfa_validate_plugin', '');
   if (!empty($validate) && array_key_exists($validate, $api)) {
-    $context['plugins']['validate'] = $api[$validate]['class'];
+    $plugins['validate'] = $validate;
   }
   // Add fallback plugins.
   foreach (variable_get('tfa_fallback_plugins', array()) as $key) {
     if (array_key_exists($key, $api)) {
-      $context['plugins']['fallback'][] = $api[$key]['class'];
+      $plugins['fallback'][] = $key;
     }
   }
   // Allow other modules to modify TFA context.
+  $context = array('uid' => $account->uid, 'plugins' => $plugins);
   drupal_alter('tfa_context', $context);
   tfa_set_context($account, $context);
   return $context;
@@ -131,7 +140,8 @@ function tfa_start_context($account) {
 /**
  * Remove context for account.
  *
- * @param $account User account object
+ * @param object $account
+ *   User account object
  */
 function tfa_clear_context($account) {
   unset($_SESSION['tfa'][$account->uid]);
@@ -140,7 +150,9 @@ function tfa_clear_context($account) {
 /**
  * Get Tfa object in the account's current context.
  *
- * @param $account User account object
+ * @param object $account
+ *   User account
+ *
  * @return Tfa
  */
 function tfa_get_process($account) {
@@ -150,10 +162,61 @@ function tfa_get_process($account) {
     if (empty($context)) {
       $context = tfa_start_context($account);
     }
-    $plugins = $context['plugins'];
-    $tfa = new Tfa($plugins, $context);
+    // Get plugins.
+    $fallback_plugins = $login_plugins = array();
+    $validate_plugin = $context['plugins']['validate'];
+    $validate = tfa_get_plugin($validate_plugin, $context);
+    if (!empty($context['plugins']['fallback'])) {
+      foreach ($context['plugins']['fallback'] as $plugin_name) {
+        // Avoid duplicates and using the validate plugin.
+        if (!array_key_exists($plugin_name, $fallback_plugins) && $plugin_name !== $validate_plugin) {
+          $plugin_object = tfa_get_plugin($plugin_name, $context);
+          if ($plugin_object) {
+            $fallback_plugins[$plugin_name] = $plugin_object;
+          }
+        }
+      }
+    }
+    if (!empty($context['plugins']['login'])) {
+      foreach ($context['plugins']['login'] as $plugin_name) {
+        if (!array_key_exists($plugin_name, $login_plugins) && $plugin_name !== $validate_plugin) {
+          $plugin_object = tfa_get_plugin($plugin_name, $context);
+          if ($plugin_object) {
+            $login_plugins[$plugin_name] = $plugin_object;
+          }
+        }
+      }
+    }
+    $tfa = new Tfa($validate, $context, $fallback_plugins, $login_plugins);
   }
   return $tfa;
+}
+
+/**
+ * Get or create a TFA plugin object.
+ *
+ * @param string $plugin_name
+ * @param array $context
+ * @return TfaBasePlugin|FALSE
+ */
+function tfa_get_plugin($plugin_name, array $context) {
+  $api = module_invoke_all('tfa_api');
+  // Call plugin callback.
+  if (isset($api[$plugin_name]['callback'])) {
+    $function = $api[$plugin_name]['callback'];
+    return $function($context);
+  }
+  // Or (plugin_name)_create
+  $function = $plugin_name . '_create';
+  if (function_exists($function)) {
+    return $function($context);
+  }
+  // Or if class is defined instantiate it.
+  if (isset($api[$plugin_name]['class'])) {
+    $class = $api[$plugin_name]['class'];
+    return new $class($context);
+  }
+  return FALSE;
 }
 
 /**

@@ -42,21 +42,8 @@ class Tfa {
   /**
    * TFA constructor.
    *
-   * @param array $plugins
-   *   Plugins to instansiate.
-   *
-   *   Must include key:
-   *
-   *     - 'validate'
-   *       Class name of TfaBasePlugin implementing TfaValidationPluginInterface.
-   *
-   *   May include keys:
-   *
-   *     - 'login'
-   *       Array of classes of TfaBasePlugin implementing TfaLoginPluginInterface.
-   *
-   *     - 'fallback'
-   *       Array of classes of TfaBasePlugin that can be used as fallback processes.
+   * @param TfaBasePlugin $validate
+   *   Validation plugin.
    *
    * @param array $context
    *   Context of TFA process.
@@ -66,41 +53,49 @@ class Tfa {
    *     - 'uid'
    *       Account uid of user in TFA process.
    *
+   *     - 'plugins'
+   *       Array of plugin names indexed by type: 'validate', 'fallback',
+   *       'login'.
+   *
+   * @param array $fallbackPlugins
+   *   Optional TfaBasePlugin objects for use as fallback indexed by name.
+   *
+   * @param array $loginPlugins
+   *   Optional TfaLoginPluginInterface objects for use during login indexed by
+   *   name.
+   *
    */
-  public function __construct(array $plugins, array $context) {
-    if (empty($plugins['validate'])) {
-      // @todo throw exception?
-    }
+  public function __construct(TfaBasePlugin $validate, array $context, array $fallbackPlugins, array $loginPlugins) {
+    $validate_plugin = $context['plugins']['validate'];
+    $activePlugins = array('validate' => $validate_plugin);
 
-    $this->validatePlugin = new $plugins['validate']($context);
-    if (!empty($plugins['login'])) {
-      foreach ($plugins['login'] as $class) {
-        $this->loginPlugins[] = new $class($context);
+    $this->validatePlugin = $validate;
+    if (!empty($loginPlugins)) {
+      foreach ($loginPlugins as $plugin_name => $loginPlugin) {
+        $this->loginPlugins[$plugin_name] = $loginPlugin;
+        $activePlugins['login'][] = $plugin_name;
       }
     }
-    if (!empty($plugins['fallback'])) {
-      $plugins['fallback'] = array_unique($plugins['fallback']);
-      // @todo consider making plugin->ready a class method?
-      foreach ($plugins['fallback'] as $key => $class) {
-        if ($class === $plugins['validate']) {
-          unset($plugins['fallback'][$key]);
-          continue; // Skip this fallback if its same as validation.
+    if (!empty($fallbackPlugins)) {
+      foreach ($fallbackPlugins as $plugin_name => $fallbackPlugin) {
+        // Skip this fallback if its same as validation.
+        if ($plugin_name === $validate_plugin) {
+          continue;
         }
-        $fallback = new $class($context);
-        // Only plugins that are ready can stay.
-        if ($fallback->ready()) {
-          $this->fallbackPlugins[] = $class;
-        }
-        else {
-          unset($plugins['fallback'][$key]);
+        // Only use plugins that are ready.
+        if ($fallbackPlugin->ready()) {
+          $this->fallbackPlugins[$plugin_name] = $fallbackPlugin;
+          $activePlugins['fallback'][] = $plugin_name;
         }
       }
+      // Mark whether a fallback plugin exists.
       if (!empty($this->fallbackPlugins)) {
         $this->fallback = TRUE;
       }
     }
     $this->context = $context;
-    $this->context['plugins'] = $plugins;
+    // Save only active plugins.
+    $this->context['plugins'] = $activePlugins;
   }
 
   /**
@@ -196,8 +191,8 @@ class Tfa {
     if ($this->fallback && isset($form_state['values']['fallback']) && $form_state['values']['op'] === $form_state['values']['fallback']) {
       // Change context to next fallback and reset validatePlugin.
       $this->context['plugins']['validate'] = array_shift($this->context['plugins']['fallback']);
-      $class = $this->context['plugins']['validate'];
-      $this->validatePlugin = new $class($this->context);
+      $plugin = $this->fallbackPlugins[$this->context['plugins']['validate']];
+      $this->validatePlugin = $plugin;
       if (empty($this->context['plugins']['fallback'])) {
         $this->fallback = FALSE;
       }
@@ -285,13 +280,8 @@ class TfaSetup {
   /**
    * TFA Setup constructor.
    *
-   * @param array $plugins
-   *   Plugins to instansiate.
-   *
-   *   Must include key:
-   *
-   *     - 'setup'
-   *       Class name of TfaBasePlugin implementing TfaSetupPluginInterface.
+   * @param TfaBasePlugin $setupPlugin
+   *   Plugin being set up.
    *
    * @param array $context
    *   Context of TFA process.
@@ -302,13 +292,9 @@ class TfaSetup {
    *       Account uid of user in TFA process.
    *
    */
-  public function __construct(array $plugins, array $context) {
-    if (empty($plugins['setup'])) {
-      // @todo throw exception?
-    }
-    $this->setupPlugin = new $plugins['setup']($context);
+  public function __construct(TfaBasePlugin $setupPlugin, array $context) {
+    $this->setupPlugin = $setupPlugin;
     $this->context = $context;
-    $this->context['plugins'] = $plugins;
   }
 
   /**

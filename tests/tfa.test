@@ -281,7 +281,7 @@ class TfaTestCase extends DrupalWebTestCase {
     variable_set('tfa_validate_plugin', 'tfa_test_totp');
     variable_set('tfa_fallback_plugins', array('tfa_test_send', 'tfa_test_fallback'));
     // Allow context alter that will set send as validate plugin.
-    variable_set('tfa_test_context_alter', 'TfaTestSend');
+    variable_set('tfa_test_context_alter', 'tfa_test_send');
     $account = $this->web_user;
 
     $edit = array(
@@ -352,7 +352,7 @@ class TfaTestCase extends DrupalWebTestCase {
    * Test TfaBasePlugin encryption methods.
    */
   protected function testEncryption() {
-    $tfa_totp = new TfaTestTotp();
+    $tfa_totp = new TfaTestTotp(array('uid' => 1));
     $plain_text = $this->randomName(rand(6,20));
     $tfa_totp->setInStore($plain_text);
     $this->assertIdentical($plain_text, $tfa_totp->readFromStore());

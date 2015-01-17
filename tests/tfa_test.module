@@ -49,6 +49,39 @@ function tfa_test_tfa_api() {
 }
 
 /**
+ * @param array $context
+ * @return TfaTestLogin
+ */
+function tfa_test_login_create($context) {
+  $uid = variable_get('tfa_test_login_uid', '');
+  return new TfaTestLogin($context, $uid);
+}
+
+/**
+ * @param array $context
+ * @return TfaTestSend
+ */
+function tfa_test_send_create($context) {
+  return new TfaTestSend($context);
+}
+
+/**
+ * @param array $context
+ * @return TfaTestTotp
+ */
+function tfa_test_totp_create($context) {
+  return new TfaTestTotp($context);
+}
+
+/**
+ * @param array $context
+ * @return TfaTestFallback
+ */
+function tfa_test_fallback($context) {
+  return new TfaTestFallback($context);
+}
+
+/**
  * The multi-step form builder for TfaSetup().
  */
 function tfa_test_setup_form($form, &$form_state, $account) {
@@ -89,8 +122,10 @@ function tfa_test_setup_form_submit($form, &$form_state) {
   if (empty($form_state['storage'])) {
     // Unlike the standard Tfa process and tfa_form(). TfaSetup can use
     // $form_state storage to persist user context.
+    $context = array('uid' => $account->uid);
     $class = variable_get('tfa_test_setup_class', '');
-    $tfaSetup = new TfaSetup(array('setup' => $class), array('uid' => $account->uid));
+    $setup_plugin = new $class($context);
+    $tfaSetup = new TfaSetup($setup_plugin, array(), $context);
 
     $form_state['storage']['tfa_setup'] = $tfaSetup;
     $form_state['rebuild'] = TRUE;

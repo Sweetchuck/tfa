@@ -38,6 +38,11 @@
  *       Human-readable name of the plugin.
  *    - 'class'
  *       Class name of the plugin.
+ *
+ *    Optional sub-elements:
+ *
+ *    - 'callback'
+ *      Function name to call to return this plugin's object.
  */
 function hook_tfa_api() {
   return array(
@@ -113,8 +118,11 @@ function my_tfa_setup_form_submit($form, &$form_state) {
   if (empty($form_state['storage'])) {
     // Start the TfaSetup process.
 
-    // $class must be defined somehow (e.g. from a variable)
-    $tfaSetup = new TfaSetup(array('setup' => $class), array('uid' => $account->uid));
+    $context = array('uid' => $account->uid);
+    // Setup plugin class must be defined somehow (e.g. from a variable).
+    $class = 'MyTfaPluginSetup';
+    $setup_plugin = new $class($context);
+    $tfaSetup = new TfaSetup($setup_plugin, $context);
 
     // Store TfaSetup process for multi-step.
     $form_state['storage']['tfa_setup'] = $tfaSetup;
