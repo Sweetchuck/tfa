@@ -134,8 +134,9 @@ class Tfa {
    */
   public function getForm(array $form, array &$form_state) {
     $form = $this->validatePlugin->getForm($form, $form_state);
-    // Allow login plugins to modify form.
-    if (!empty($this->loginPlugins)) {
+    // Allow login plugins to modify form unless validation plugin set
+    // '#tfa_no_login' to TRUE.
+    if (!empty($this->loginPlugins) && (!isset($form['#tfa_no_login']) || $form['#tfa_no_login'] === FALSE)) {
       foreach ($this->loginPlugins as $class) {
         if (method_exists($class, 'getForm')) {
           $form = $class->getForm($form, $form_state);
