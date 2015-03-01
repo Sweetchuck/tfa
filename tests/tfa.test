@@ -108,7 +108,7 @@ class TfaTestCase extends DrupalWebTestCase {
     variable_set('tfa_validate_plugin', 'tfa_test_send');
     // Set the TFA hourly flood threshold.
     $hourly_threshold = 3;
-    variable_set('tfa_validate_threshold', $hourly_threshold);
+    variable_set('tfa_user_threshold', $hourly_threshold);
     $account = $this->web_user;
 
     $edit = array(

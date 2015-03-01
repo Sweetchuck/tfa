@@ -63,8 +63,8 @@ function tfa_form_validate($form, &$form_state) {
     foreach ($tfa->getErrorMessages() as $element => $message) {
       form_set_error($element, $message);
     }
-    // Register failure for purposes of flood control.
-    flood_register_event('tfa_validate');
+    $identifier = variable_get('user_failed_login_identifier_uid_only', FALSE) ? $account->uid : $account->uid . '-' . ip_address();
+    flood_register_event('tfa_user', variable_get('tfa_user_window', 900), $identifier);
 
     if (_tfa_hit_flood($tfa)) {
       module_invoke_all('tfa_flood_hit', $tfa->getContext());
@@ -91,8 +91,6 @@ function tfa_form_submit($form, &$form_state) {
     }
     $context = $tfa->getContext();
     tfa_set_context($account, $context);
-    // Clear validation flood.
-    flood_clear_event('tfa_validate');
     $form_state['rebuild'] = TRUE;
   }
   else {
@@ -170,13 +168,18 @@ function _tfa_hit_flood($tfa) {
     return FALSE;
   }
   $window = variable_get('tfa_flood_window', 3600);
-  if (!flood_is_allowed('tfa_validate', variable_get('tfa_validate_threshold', 6), $window)) {
-    drupal_set_message(t('You have reached the threshold for incorrect code entry attempts. Please try again in !time minutes.', array('!time' => $window / 60)), 'error');
+  $user_window = variable_get('tfa_user_window', 900);
+  $context = $tfa->getContext();
+  $identifier = variable_get('user_failed_login_identifier_uid_only', FALSE) ? $context['uid'] : $context['uid'] . '-' . ip_address();
+
+  // Check user specific flood
+  if (!flood_is_allowed('tfa_user', variable_get('tfa_user_threshold', 6), $user_window, $identifier)) {
+    drupal_set_message(t('You have reached the threshold for incorrect code entry attempts. Please try again in !time minutes.', array('!time' => round($user_window / 60))), 'error');
     return TRUE;
   }
   // Check entire process flood.
   elseif (!flood_is_allowed('tfa_begin', variable_get('tfa_begin_threshold', 6), $window)) {
-    drupal_set_message(t('You have reached the threshold for TFA attempts. Please try again in !time minutes.', array('!time' => $window / 60)), 'error');
+    drupal_set_message(t('You have reached the threshold for TFA attempts. Please try again in !time minutes.', array('!time' => round($window / 60))), 'error');
     return TRUE;
   }
   // Check TFA plugin flood.
