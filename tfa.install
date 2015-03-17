@@ -2,63 +2,43 @@
 
 /**
  * @file
+ * Install and uninstall hook implementations of TFA module.
  */
 
 /**
- * Implementation of hook_install().
- */
-function tfa_install() {
-  drupal_install_schema('tfa');
-}
-
-/**
- * Implementation of hook_schema().
- */
-function tfa_schema() {
-  $schema['tfa'] = array(
-    'fields' => array(
-      'uid' => array(
-        'type' => 'int',
-        'unsigned' => TRUE,
-        'not null' => TRUE,
-        'default' => 0,
-        'description' => 'Primary Key: {users}.uid for user.',
-      ),
-      'code' => array(
-        'type' => 'varchar',
-        'length' => 160,
-        'not null' => TRUE,
-        'default' => '',
-      ),
-      'accepted' => array(
-        'type' => 'int',
-        'not null' => TRUE,
-        'default' => 0,
-        'size' => 'tiny',
-      ),
-      'created' => array(
-        'type' => 'int',
-        'not null' => TRUE,
-        'default' => 0,
-      ),
-    ),
-    'primary key' => array('uid'),
-    'indexes' => array(
-      'code' => array('code'),
-    ),
-  );
-  
-  return $schema;
-}
-
-/**
- * Implementation of hook_uninstall().
+ * Implements hook_uninstall().
  */
 function tfa_uninstall() {
-  drupal_uninstall_schema('tfa');
-  variable_del('tfa_hourly_threshold');
-  variable_del('tfa_send_message');
-  variable_del('tfa_code_length');
-  variable_del('tfa_channel');
-  variable_del('tfa_phone_field');
+  variable_del('tfa_login_plugins');
+  variable_del('tfa_validate_plugin');
+  variable_del('tfa_fallback_plugins');
+
+  variable_del('tfa_validate_threshold');
+  variable_del('tfa_begin_threshold');
+  variable_del('tfa_flood_window');
+  // This variable used to exist.
+  variable_del('tfa_required');
+  variable_del('tfa_enabled');
+  variable_del('tfa_test_mode');
+}
+
+/**
+ * Implements hook_requirements().
+ */
+function tfa_requirements($phase) {
+  $requirements = array();
+
+  if ($phase == 'runtime') {
+    $t = get_t();
+    $loaded = extension_loaded('mcrypt');
+    $enabled = variable_get('tfa_enabled', 0);
+    $requirements['tfa_mcrypt'] = array(
+      'title' => $t('Two-factor authentication'),
+      'value' => $enabled ? $t('Enabled') : $t('Not enabled'),
+      'description' => $loaded ? $t('The PHP Mcrypt extension is installed.') : $t('The TFA module requires the PHP Mcrypt extension be installed on the web server.'),
+      'severity' => $loaded ? REQUIREMENT_OK : REQUIREMENT_ERROR,
+    );
+  }
+
+  return $requirements;
 }

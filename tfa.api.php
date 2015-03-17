@@ -11,36 +11,147 @@
  * @defgroup tfa TFA module integrations.
  *
  * Module integrations with the TFA module.
- *
  */
 
 /**
- * Define TFA communication channel and address storage.
+ * Define TFA plugins.
  *
- * This hook is required to provide a TFA channel for login code communication
- * or to provide custom storage of a address (e.g. phone number) for an account.
+ * This hook is required to use your own TFA plugin.
  *
- * @return
- *   An array of information about the module's methods for TFA integration.
+ * A plugin must extend the TfaBasePlugin class and may implement one or more
+ * TFA plugin interfaces.
  *
- *   Required attributes are:
+ * Note, user-defined plugin classes must be available to the Drupal registry
+ * for loading. Either define them in a .info file or via an autoloader.
  *
- *    - 'title'
- *        Human-readable title of the communication channel.
- *    - 'send callback'
- *        Function to call for login code transfer. Arguments are $account (a
- *        fully loaded user object being authenticated), $code (the login code,
- *        string), $message (message to accompany code, string). Must return
- *        boolean TRUE or FALSE.
- *    - 'address callback'
- *        Function to call for a unique address for the account being
- *        authenticated. Arguments are $account, a fully loaded user object.
- *        Must return a non-empty variable or FALSE.
+ * @return array
+ *   Keyed array of information about the plugin for TFA integration.
+ *
+ *   Required key:
+ *
+ *    - 'example_machine_name'
+ *      A unique machine name identifying the plugin.
+ *
+ *    With required sub-array containing:
+ *
+ *    - 'name'
+ *       Human-readable name of the plugin.
+ *    - 'class'
+ *       Class name of the plugin.
+ *
+ *    Optional sub-elements:
+ *
+ *    - 'callback'
+ *      Function name to call to return this plugin's object.
  */
 function hook_tfa_api() {
   return array(
-    'title' => t('TFA Example Channel'),
-    'send callback' => '_tfa_send_code',
-    'address callback' => '_tfa_lookup_address',
+    'my_tfa_plugin' => array(
+      'name'  => 'My TFA plugin',
+      'class' => 'MyTfaPlugin',
+    ),
   );
+}
+
+/**
+ * Example TFA plugin setup.
+ *
+ * Adapt these Form API methods for your own module. For example, for a plugin
+ * that sends a code via SMS you could use this form to allow the user to enter
+ * their phone number.
+ */
+
+/**
+ * Form builder for account configuration of TFA plugin.
+ */
+function my_tfa_setup_form($form, &$form_state, $account) {
+
+  if (empty($form_state['storage'])) {
+    /**
+     * Include details about existing setup, if applicable.
+     */
+
+    // Button to begin setup.
+    $form['start'] = array(
+      '#type' => 'submit',
+      '#value' => t('Setup'),
+    );
+  }
+  else {
+    // Return the setup plugin's form.
+    $tfa_setup = $form_state['storage']['tfa_setup'];
+    $form = $tfa_setup->getForm($form, $form_state);
+  }
+
+  // Required account element.
+  $form['account'] = array(
+    '#type' => 'value',
+    '#value' => $account,
+  );
+  return $form;
+}
+
+/**
+ * Form validation handler.
+ */
+function my_tfa_setup_form_validate($form, &$form_state) {
+  // If there's no storage the form is just beginning, pass over to submit
+  // handler.
+  if (empty($form_state['storage'])) {
+    return;
+  }
+  // Run setup plugin's form validation.
+  $tfa_setup = $form_state['storage']['tfa_setup'];
+  if (!$tfa_setup->validateForm($form, $form_state)) {
+    foreach ($tfa_setup->getErrorMessages() as $element => $message) {
+      form_set_error($element, $message);
+    }
+  }
+}
+
+/**
+ * Form submission handler.
+ */
+function my_tfa_setup_form_submit($form, &$form_state) {
+  $account = $form['account']['#value'];
+
+  if (empty($form_state['storage'])) {
+    // Start the TfaSetup process.
+
+    $context = array('uid' => $account->uid);
+    // Setup plugin class must be defined somehow (e.g. from a variable).
+    $class = 'MyTfaPluginSetup';
+    $setup_plugin = new $class($context);
+    $tfa_setup = new TfaSetup($setup_plugin, $context);
+
+    // Store TfaSetup process for multi-step.
+    $form_state['storage']['tfa_setup'] = $tfa_setup;
+    $form_state['rebuild'] = TRUE;
+  }
+  elseif (!empty($form_state['storage']['tfa_setup'])) {
+    // Invoke plugin form submission.
+    $tfa_setup = $form_state['storage']['tfa_setup'];
+    if ($tfa_setup->submitForm($form, $form_state)) {
+      drupal_set_message('Setup complete');
+
+      $form_state['storage'] = NULL;
+      $form_state['redirect'] = 'user';
+    }
+    else {
+      // Setup isn't complete so rebuild.
+      $form_state['rebuild'] = TRUE;
+    }
+  }
+}
+
+/**
+ * Act during TFA flood hit.
+ *
+ * This hook is invoked when one of the flood limits is hit.
+ *
+ * @param array $context
+ *   TFA process context.
+ */
+function hook_tfa_flood_hit($context = array()) {
+
 }
