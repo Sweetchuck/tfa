@@ -42,7 +42,6 @@ class TfaTestCase extends DrupalWebTestCase {
     // Enable TFA module and the test module.
     parent::setUp('autoload', 'tfa', 'tfa_test');
 
-    autoload_registry_rebuild();
     variable_set('tfa_enabled', TRUE);
 
     $this->webUserTfa = $this->drupalCreateUser(array('access content', 'require tfa'));

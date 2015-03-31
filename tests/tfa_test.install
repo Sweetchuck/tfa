@@ -1,0 +1,13 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the TFA Test module.
+ */
+
+/**
+ * Implements hook_enable().
+ */
+function tfa_test_enable() {
+  autoload_registry_rebuild();
+}
