@@ -136,7 +136,6 @@ function tfa_form_submit($form, &$form_state) {
  */
 function _tfa_form_get_destination($context, $form_state, $account) {
   $query = tfa_drupal_get_query_parameters();
-  $options = array();
   $destination = 'user';
   if (!empty($query['pass-reset-token'])) {
     // If pass-reset-token was set then complete final process interrupted
@@ -153,7 +152,7 @@ function _tfa_form_get_destination($context, $form_state, $account) {
   if (!empty($form_state['redirect'])) {
     if (is_array($form_state['redirect'])) {
       $destination = $form_state['redirect'][0];
-      $options = $form_state['redirect'][1];
+      $query = $form_state['redirect'][1] + $query;
     }
     else {
       $destination = $form_state['redirect'];
@@ -170,21 +169,19 @@ function _tfa_form_get_destination($context, $form_state, $account) {
   if (!empty($context['redirect'])) {
     if (is_array($context['redirect'])) {
       $destination = $context['redirect'][0];
-      $options = $context['redirect'][1];
+      $query = $context['redirect'][1] + $query;
     }
     else {
       $destination = $context['redirect'];
     }
   }
 
-  $options = array_merge($options, array('query' => $query));
-
   // Allow other modules to alter final destination. This is better than form
   // altering TFA forms because callers would need to check the TFA process
   // status to figure out when to act.
-  drupal_alter('tfa_complete_redirect', $destination, $options);
+  drupal_alter('tfa_complete_redirect', $destination, $query);
 
-  return array($destination, $options);
+  return array($destination, $query);
 }
 
 /**
